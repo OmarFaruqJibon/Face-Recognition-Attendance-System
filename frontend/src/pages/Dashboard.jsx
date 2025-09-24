@@ -12,11 +12,13 @@ import UnknownAlerts from "../components/UnknownAlerts";
 import UserManagement from "../components/UserManagement";
 import PresenceList from "../components/PresenceList";
 import dayjs from "dayjs";
+import timezone from "dayjs/plugin/timezone";
 
 const WS_URL =
   (import.meta.env.VITE_WS_BASE || "ws://localhost:8000") + "/ws/stream";
 
 export default function Dashboard() {
+  dayjs.extend(timezone);
   const [liveMap, setLiveMap] = useState({}); // key -> info { type: 'known'|'unknown', id, entry_time, last_seen, snapshot, name? }
   const [unknownQueue, setUnknownQueue] = useState([]);
   const [users, setUsers] = useState([]);
@@ -129,7 +131,7 @@ export default function Dashboard() {
   }
 
   async function handleGenerateAttendance(date) {
-    const dateStr = dayjs(date).format("YYYY-MM-DD");
+    const dateStr = dayjs(date).tz("Asia/Dhaka").format("YYYY-MM-DD");
     await generateAttendance(dateStr);
     alert("Attendance generation triggered for " + dateStr);
   }
@@ -159,11 +161,12 @@ export default function Dashboard() {
           }}
         />
         <UserManagement users={users} onUsersChanged={setUsers} />
-        <div className="bg-white p-4 rounded shadow">
+
+        {/* <div className="bg-white p-4 rounded shadow">
           <h3 className="font-semibold mb-2">Admin</h3>
           <button
             onClick={() => handleGenerateAttendance(new Date())}
-            className="px-3 py-2 bg-indigo-600 text-white rounded"
+            className="px-3 py-2 bg-gray-900 text-white rounded"
           >
             Generate Today Attendance
           </button>
@@ -175,7 +178,7 @@ export default function Dashboard() {
           >
             Reload Users
           </button>
-        </div>
+        </div> */}
       </div>
     </div>
   );

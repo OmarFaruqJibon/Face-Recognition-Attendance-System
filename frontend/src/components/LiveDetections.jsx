@@ -4,6 +4,9 @@ import React from "react";
 import dayjs from "dayjs";
 
 export default function LiveDetections({ liveMap = {}, users = [] }) {
+  // Bangladesh is UTC+6
+  const BANGLADESH_OFFSET = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
+
   const items = Object.values(liveMap).sort(
     (a, b) => new Date(b.last_seen) - new Date(a.last_seen)
   );
@@ -24,10 +27,14 @@ export default function LiveDetections({ liveMap = {}, users = [] }) {
           const name = isKnown
             ? userMap[it.id]?.name || `User ${it.id.slice(-4)}`
             : "Unknown";
-          const lastSeen = dayjs(it.last_seen).format("HH:mm:ss");
-          const entry = dayjs(it.entry_time);
+          const lastSeen = dayjs(it.last_seen + BANGLADESH_OFFSET).format(
+            "HH:mm:ss"
+          );
+          const entry = dayjs(it.entry_time + BANGLADESH_OFFSET);
           const duration = Math.floor(
-            (new Date(it.last_seen) - new Date(it.entry_time)) / 1000
+            (new Date(it.last_seen).getTime() -
+              new Date(it.entry_time).getTime()) /
+              1000
           );
           return (
             <div key={`${it.type}:${it.id}`} className="bg-gray-50 p-2 rounded">

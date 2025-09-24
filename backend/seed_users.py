@@ -8,13 +8,6 @@ Place person images like either:
 or
   backend/images/John/1.jpg
   backend/images/John/2.jpg
-
-Requirements:
-  pip install pymongo python-dotenv opencv-python pillow insightface numpy
-
-Run:
-  cd backend
-  python seed_users.py
 """
 
 import os
@@ -36,7 +29,6 @@ load_dotenv(BASE_DIR / ".env")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "face_db")
 INSIGHTFACE_CTX_ID = int(os.getenv("INSIGHTFACE_CTX_ID", "-1"))  # -1 CPU, 0 GPU
-RESIZE_WIDTH = int(os.getenv("RESIZE_WIDTH", "480"))
 
 IMAGES_DIR = BASE_DIR / "images"
 SNAPSHOT_DIR = BASE_DIR / "static" / "snapshots"
@@ -45,7 +37,7 @@ SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
 # Accept image extensions
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff"}
 
-# --- connect to DB (synchronous pymongo for a one-time script) ---
+# --- connect to DB ---
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 
@@ -87,7 +79,14 @@ def extract_embedding_from_image(model, img_bgr):
 
 
 def seed_from_person_folder(model, person_dir: Path, name: str):
+    # check if already exists
+    if db.users.find_one({"name": name}):
+        print(f"[seed] user with name '{name}' already exists in DB, skipping")
+        return False
+
     embeddings = []
+    snapshot_img = None
+
     for f in sorted(person_dir.iterdir()):
         if not is_image_file(f):
             continue
@@ -98,6 +97,8 @@ def seed_from_person_folder(model, person_dir: Path, name: str):
         emb = extract_embedding_from_image(model, img)
         if emb is not None:
             embeddings.append(emb)
+            if snapshot_img is None:
+                snapshot_img = img  # first valid face image
         else:
             print(f"[seed] no face in {f}, skipping")
 
@@ -105,20 +106,13 @@ def seed_from_person_folder(model, person_dir: Path, name: str):
         print(f"[seed] no valid faces for person {name}, skipping")
         return False
 
-    # average embeddings if multiple images
     avg_emb = np.mean(np.stack(embeddings, axis=0), axis=0)
-    # save a snapshot (use first image)
-    img0 = cv2.imread(str(next(p for p in person_dir.iterdir() if is_image_file(p))))
-    snapshot_path = save_snapshot_bgr(img0)
-    # insert into DB (skip if name already exists)
-    if db.users.find_one({"name": name}):
-        print(f"[seed] user with name '{name}' already exists in DB, skipping")
-        return False
+    snapshot_path = save_snapshot_bgr(snapshot_img)
 
     doc = {
         "name": name,
         "role": "employee",
-        "embedding": avg_emb.astype(float).tolist(),
+        "embedding": avg_emb.astype(np.float32).tolist(),
         "image_path": snapshot_path,
         "created_at": datetime.utcnow(),
     }
@@ -147,7 +141,7 @@ def seed_from_single_image(model, img_path: Path):
     doc = {
         "name": name,
         "role": "employee",
-        "embedding": emb.astype(float).tolist(),
+        "embedding": emb.astype(np.float32).tolist(),
         "image_path": snapshot_path,
         "created_at": datetime.utcnow(),
     }
@@ -163,16 +157,9 @@ def main():
         print("Place images at backend/images/ or create subfolders (backend/images/<name>/...).")
         sys.exit(1)
 
-    # check if DB already has users
-    if db.users.count_documents({}) > 0:
-        print("[seed] users collection is not empty — skipping automatic seeding.")
-        print("If you want to force seeding, clear the users collection first.")
-        sys.exit(0)
-
     model = load_insightface_model()
 
     added = 0
-    # iterate entries
     for entry in sorted(IMAGES_DIR.iterdir()):
         if entry.is_dir():
             name = entry.name
@@ -183,11 +170,8 @@ def main():
             ok = seed_from_single_image(model, entry)
             if ok:
                 added += 1
-        else:
-            # unknown file type -> skip
-            continue
 
-    print(f"[seed] finished. Total users added: {added}")
+    print(f"[seed] finished. Total new users added: {added}")
 
 
 if __name__ == "__main__":
