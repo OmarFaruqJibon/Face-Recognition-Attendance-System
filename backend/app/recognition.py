@@ -1,4 +1,3 @@
-# backend/app/recognition.py
 import os
 import asyncio
 import datetime
@@ -20,7 +19,11 @@ ABSENCE_TIMEOUT = int(os.getenv("ABSENCE_TIMEOUT", "5"))
 
 model = None
 known_embeddings: dict = {}  # user_id -> np.array
+user_names: dict = {}        # user_id -> name
 active_presence: dict = {}   # key -> presence info
+
+last_frame = None  # global annotated frame for streaming
+
 
 def load_model():
     global model
@@ -30,15 +33,20 @@ def load_model():
         model.prepare(ctx_id=INSIGHTFACE_CTX_ID, det_size=(640, 640))
     return model
 
+
 async def reload_known_embeddings():
-    """Reload embeddings cache from DB."""
-    global known_embeddings
+    """Reload embeddings cache from DB, including names."""
+    global known_embeddings, user_names
     known_embeddings = {}
+    user_names = {}
     cursor = db.users.find({})
     async for u in cursor:
         if "embedding" in u and u["embedding"]:
-            known_embeddings[str(u["_id"])] = np.array(u["embedding"], dtype=np.float32)
+            uid = str(u["_id"])
+            known_embeddings[uid] = np.array(u["embedding"], dtype=np.float32)
+            user_names[uid] = u.get("name", f"User {uid[:4]}")
     print(f"[recognition] loaded {len(known_embeddings)} known embeddings")
+
 
 def match_known(emb: np.ndarray):
     best_id = None
@@ -50,7 +58,9 @@ def match_known(emb: np.ndarray):
             best_id = uid
     return best_id, best_dist
 
+
 async def start_recognition_loop():
+    global last_frame
     load_model()
     await reload_known_embeddings()
     loop = asyncio.get_running_loop()
@@ -79,10 +89,24 @@ async def start_recognition_loop():
             now = datetime.datetime.utcnow()
             processed_keys = set()
 
+            # draw faces
             for face in faces:
                 emb = face.normed_embedding
                 uid, dist = match_known(emb)
 
+                x1, y1, x2, y2 = face.bbox.astype(int)
+                label = "Unknown"
+                color = (0, 0, 255)
+
+                if uid is not None and dist <= THRESHOLD:
+                    label = user_names.get(uid, f"User {uid[:4]}")
+                    color = (255, 0, 255)
+
+                cv2.rectangle(frame_small, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(frame_small, label, (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+                # === presence logic ===
                 if uid is not None and dist <= THRESHOLD:
                     key = f"known:{uid}"
                     if key not in active_presence:
@@ -103,6 +127,7 @@ async def start_recognition_loop():
                         await manager.broadcast_json({
                             "type": "known",
                             "user_id": uid,
+                            "name": label,
                             "first_seen": now.isoformat(),
                             "snapshot": snapshot_path,
                         })
@@ -111,6 +136,7 @@ async def start_recognition_loop():
                         await manager.broadcast_json({
                             "type": "known",
                             "user_id": uid,
+                            "name": label,
                             "last_seen": now.isoformat(),
                         })
                     processed_keys.add(key)
@@ -126,7 +152,6 @@ async def start_recognition_loop():
                     }
                     res = await db.unknowns.insert_one(unknown_doc)
                     unknown_id = str(res.inserted_id)
-
                     key = f"unknown:{unknown_id}"
                     active_presence[key] = {
                         "id": unknown_id,
@@ -151,7 +176,10 @@ async def start_recognition_loop():
                     if info["event_id"]:
                         await db.presence_events.update_one(
                             {"_id": info["event_id"]},
-                            {"$set": {"exit_time": exit_time, "duration_seconds": duration}},
+                            {"$set": {
+                                "exit_time": exit_time,
+                                "duration_seconds": duration
+                            }},
                         )
                     await manager.broadcast_json({
                         "type": "presence_end",
@@ -162,6 +190,9 @@ async def start_recognition_loop():
                     to_remove.append(key)
             for k in to_remove:
                 active_presence.pop(k, None)
+
+            # update annotated frame for streaming
+            last_frame = frame_small
 
             await asyncio.sleep(0.05)
     finally:
