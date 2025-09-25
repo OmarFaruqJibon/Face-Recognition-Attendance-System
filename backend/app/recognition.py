@@ -96,15 +96,44 @@ async def start_recognition_loop():
 
                 x1, y1, x2, y2 = face.bbox.astype(int)
                 label = "Unknown"
-                color = (0, 0, 255)
+                main_color = (0, 0, 255)          # red
+                outline_color = (255, 255, 255)   # white
 
                 if uid is not None and dist <= THRESHOLD:
                     label = user_names.get(uid, f"User {uid[:4]}")
-                    color = (255, 0, 255)
+                    main_color = (0, 255, 255)      # yellow
+                    outline_color = (0, 0, 0)       # black
 
-                cv2.rectangle(frame_small, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(frame_small, label, (x1, y1 - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                # === draw centered text safely ===
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                scale = 0.8
+                thickness = 2
+
+                # Get text size
+                (text_w, text_h), _ = cv2.getTextSize(label, font, scale, thickness)
+                frame_h, frame_w = frame_small.shape[:2]
+
+                # Center above the head
+                text_x = int((x1 + x2) / 2 - text_w / 2)
+                text_y = y1 - 40
+
+                # Clamp X inside the frame
+                if text_x < 0:
+                    text_x = 0
+                elif text_x + text_w > frame_w:
+                    text_x = frame_w - text_w
+
+                # Clamp Y (avoid negative if head is at the top)
+                if text_y - text_h < 0:
+                    text_y = text_h + 5
+
+                # Outline (draw slightly thicker in outline color)
+                cv2.putText(frame_small, label, (text_x, text_y),
+                            font, scale, outline_color, thickness + 2, cv2.LINE_AA)
+
+                # Main text
+                cv2.putText(frame_small, label, (text_x, text_y),
+                            font, scale, main_color, thickness, cv2.LINE_AA)
 
                 # === presence logic ===
                 if uid is not None and dist <= THRESHOLD:
