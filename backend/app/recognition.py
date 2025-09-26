@@ -5,6 +5,8 @@ import numpy as np
 import cv2
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
+from app import number_plate
+
 
 from app.db import db
 from app.ws_manager import manager
@@ -219,6 +221,12 @@ async def start_recognition_loop():
                     to_remove.append(key)
             for k in to_remove:
                 active_presence.pop(k, None)
+            
+            
+            # ---------------------
+            # Number plate detection
+            # ---------------------
+            frame_small = await number_plate.detect_number_plate(frame_small)
 
             # update annotated frame for streaming
             last_frame = frame_small
