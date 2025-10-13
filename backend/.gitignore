@@ -32,11 +32,8 @@ __pycache__
 *.pyo
 *.pyd
 
-
-/snapshots
-snapshots
-snapshots/
-
 models
 
-env
+.env
+
+static
