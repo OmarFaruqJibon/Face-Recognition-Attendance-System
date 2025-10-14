@@ -1,13 +1,15 @@
 import React, { useState } from "react";
-import { Trash2, UserCircle2, Edit2 } from "lucide-react";
-import { deleteUser, updateUser } from "../api/apiClient";
+import { Trash2, Edit2, PlusCircle } from "lucide-react";
+import { deleteUser, updateUser, createUser } from "../api/apiClient";
 
 export default function UserManagement({ users = [], onUsersChanged }) {
   const [selectedUser, setSelectedUser] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({ name: "", role: "", note: "" });
+  const [imageFile, setImageFile] = useState(null);
 
   function openDeleteModal(user) {
     setSelectedUser(user);
@@ -24,9 +26,16 @@ export default function UserManagement({ users = [], onUsersChanged }) {
     setShowUpdateModal(true);
   }
 
+  function openAddModal() {
+    setFormData({ name: "", role: "", note: "" });
+    setImageFile(null);
+    setShowAddModal(true);
+  }
+
   function closeModals() {
     setShowDeleteModal(false);
     setShowUpdateModal(false);
+    setShowAddModal(false);
     setSelectedUser(null);
   }
 
@@ -56,13 +65,10 @@ export default function UserManagement({ users = [], onUsersChanged }) {
         note: formData.note.trim(),
       };
       await updateUser(selectedUser._id, body);
-
-      // Update local list
       onUsersChanged &&
         onUsersChanged(
           users.map((u) => (u._id === selectedUser._id ? { ...u, ...body } : u))
         );
-
       closeModals();
     } catch (e) {
       alert("Update failed: " + (e.response?.data?.detail || e.message));
@@ -71,12 +77,41 @@ export default function UserManagement({ users = [], onUsersChanged }) {
     }
   }
 
+  async function handleAddSubmit(e) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const form = new FormData();
+      form.append("name", formData.name);
+      form.append("role", formData.role);
+      form.append("note", formData.note);
+      if (imageFile) form.append("image", imageFile);
+
+      const newUser = await createUser(form);
+      onUsersChanged && onUsersChanged([newUser, ...users]);
+      closeModals();
+    } catch (e) {
+      alert("Add user failed: " + (e.response?.data?.detail || e.message));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <section className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
-      <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
-        User Management
-        <span className="ml-1 text-sm text-gray-500">({users.length})</span>
-      </h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+          User Management
+          <span className="ml-1 text-sm text-gray-500">({users.length})</span>
+        </h3>
+        <button
+          onClick={openAddModal}
+          className="flex items-center gap-2 px-3 py-2 rounded-md bg-green-600 hover:bg-green-700 text-white text-sm font-medium shadow-sm transition"
+        >
+          <PlusCircle size={18} />
+          Add User
+        </button>
+      </div>
 
       <div className="overflow-y-auto max-h-[420px] divide-y divide-gray-100">
         {users.length === 0 ? (
@@ -106,14 +141,14 @@ export default function UserManagement({ users = [], onUsersChanged }) {
               <div className="flex gap-2">
                 <button
                   onClick={() => openUpdateModal(u)}
-                  className="flex items-center gap-1 cursor-pointer text-blue-800 hover:text-white hover:bg-blue-800 border border-blue-700 transition px-2 py-1.5 rounded-md text-sm font-medium"
+                  className="flex items-center gap-1 text-blue-700 hover:text-white hover:bg-blue-700 border border-blue-600 transition px-2 py-1.5 rounded-md text-sm font-medium"
                 >
                   <Edit2 size={16} />
                 </button>
 
                 <button
                   onClick={() => openDeleteModal(u)}
-                  className="flex items-center gap-1 cursor-pointer text-red-800 hover:text-white hover:bg-red-600 border border-red-600 transition px-2 py-1.5 rounded-md text-sm font-medium"
+                  className="flex items-center gap-1 text-red-700 hover:text-white hover:bg-red-600 border border-red-600 transition px-2 py-1.5 rounded-md text-sm font-medium"
                 >
                   <Trash2 size={16} />
                 </button>
@@ -123,7 +158,97 @@ export default function UserManagement({ users = [], onUsersChanged }) {
         )}
       </div>
 
-      {/* Delete Confirmation Modal */}
+      {/* === Add User Modal === */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg w-[420px] p-6 relative">
+            <h4 className="text-lg font-semibold text-gray-800 mb-4">
+              Add New User
+            </h4>
+            <form onSubmit={handleAddSubmit} className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-600">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                  required
+                  className="w-full mt-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-600">
+                  Role
+                </label>
+                <input
+                  type="text"
+                  value={formData.role}
+                  onChange={(e) =>
+                    setFormData({ ...formData, role: e.target.value })
+                  }
+                  className="w-full mt-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-600">
+                  Note
+                </label>
+                <textarea
+                  value={formData.note}
+                  onChange={(e) =>
+                    setFormData({ ...formData, note: e.target.value })
+                  }
+                  rows={3}
+                  placeholder="Write note..."
+                  className="w-full mt-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+                ></textarea>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-600">
+                  Upload Image
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setImageFile(e.target.files[0])}
+                  className="w-full mt-1 text-sm text-gray-700"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={closeModals}
+                  disabled={loading}
+                  className="px-4 py-2 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100 text-sm font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className={`px-4 py-2 rounded-md text-white text-sm font-medium transition ${
+                    loading
+                      ? "bg-green-400 cursor-not-allowed"
+                      : "bg-green-600 hover:bg-green-700"
+                  }`}
+                >
+                  {loading ? "Saving..." : "Add User"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete + Update modals (already working) */}
       {showDeleteModal && selectedUser && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-lg w-[360px] p-6 relative">
@@ -162,7 +287,7 @@ export default function UserManagement({ users = [], onUsersChanged }) {
         </div>
       )}
 
-      {/* Update Modal */}
+      {/* Update Modal stays same as before */}
       {showUpdateModal && selectedUser && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-lg w-[400px] p-6 relative">
@@ -180,8 +305,8 @@ export default function UserManagement({ users = [], onUsersChanged }) {
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })
                   }
-                  className="w-full mt-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
+                  className="w-full mt-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
@@ -208,9 +333,9 @@ export default function UserManagement({ users = [], onUsersChanged }) {
                   onChange={(e) =>
                     setFormData({ ...formData, note: e.target.value })
                   }
-                  className="w-full mt-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                   rows={3}
-                  placeholder="Add a note about this user..."
+                  placeholder="Add note..."
+                  className="w-full mt-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                 ></textarea>
               </div>
 

@@ -1,3 +1,4 @@
+# backend/app/main.py
 import os
 import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -9,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi import status
 from fastapi import Body
+from fastapi import File, UploadFile, Form
 
 from app.db import db
 from app.ws_manager import manager
@@ -91,6 +93,52 @@ async def list_users():
     async for u in cursor:
         out.append(serialize_doc(u))
     return out
+
+# ADD NEW USER FROM DASHBOARD
+@app.post("/users")
+async def create_user(
+    name: str = Form(...),
+    role: str = Form(""),
+    note: str = Form(""),
+    image: UploadFile = File(None),
+):
+    import os
+    import datetime
+    from app import recognition
+
+    image_path = None
+    embedding = None
+
+    if image:
+        image_name = f"{datetime.datetime.utcnow().timestamp()}_{image.filename}"
+        save_path = os.path.join(STATIC_DIR, "snapshots", image_name)
+        with open(save_path, "wb") as f:
+            f.write(await image.read())
+        image_path = f"/static/snapshots/{image_name}"
+
+        emb = recognition.get_face_embedding_from_image(save_path)
+        if emb is not None:
+            embedding = emb.tolist()
+            print("[create_user] embedding generated successfully")
+        else:
+            print("[create_user] no face found, embedding skipped")
+
+    doc = {
+        "name": name,
+        "role": role,
+        "note": note,
+        "image_path": image_path,
+        "embedding": embedding,
+        "created_at": datetime.datetime.utcnow(),
+    }
+
+    res = await db.users.insert_one(doc)
+    doc["_id"] = str(res.inserted_id)  # ✅ Fix JSON serialization issue
+
+    await recognition.reload_known_embeddings()
+    return {"success": True, "data": doc}
+
+
 
 @app.get("/unknowns")
 async def list_unknowns(limit: int = 50):
@@ -226,6 +274,59 @@ async def update_bad_person(user_id: str, body: dict):
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="person not found")
     return {"status": "ok", "updated_id": user_id}
+
+
+@app.post("/bad_people")
+async def create_bad_person(
+    name: str = Form(...),
+    reason: str = Form(""),
+    role: str = Form("bad"),
+    image: UploadFile = File(None),
+):
+    """
+    Create a bad person (from dashboard). Saves image, generates embedding via recognition,
+    inserts into db.bad_people, reloads bad embeddings and returns serialized doc.
+    """
+    image_path = None
+    embedding = None
+
+    if image:
+        # Save uploaded image
+        image_name = f"{datetime.datetime.utcnow().timestamp()}_{image.filename}"
+        save_path = os.path.join(STATIC_DIR, "snapshots", image_name)
+        with open(save_path, "wb") as f:
+            f.write(await image.read())
+        image_path = f"/static/snapshots/{image_name}"
+
+        # Generate embedding using recognition helper
+        try:
+            emb = recognition.get_face_embedding_from_image(save_path)
+            if emb is not None:
+                embedding = emb.tolist()
+                print("[create_bad_person] embedding generated")
+            else:
+                print("[create_bad_person] no face found, embedding skipped")
+        except Exception as ex:
+            print("[create_bad_person] embedding error:", ex)
+
+    doc = {
+        "name": name,
+        "role": role or "bad",
+        "reason": reason,
+        "image_path": image_path,
+        "embedding": embedding,
+        "created_at": datetime.datetime.utcnow(),
+    }
+
+    res = await db.bad_people.insert_one(doc)
+    # make returned doc JSON-friendly
+    doc["_id"] = str(res.inserted_id)
+
+    # reload bad embeddings so system recognizes new bad person immediately
+    await recognition.reload_bad_embeddings()
+
+    return {"success": True, "data": doc}
+
 
 
 # -------------------------- BAD PEOPLE SECTION -----------------

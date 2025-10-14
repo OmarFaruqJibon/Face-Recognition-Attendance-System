@@ -38,6 +38,31 @@ def load_model():
         model.prepare(ctx_id=INSIGHTFACE_CTX_ID, det_size=(640, 640))
     return model
 
+
+
+def get_face_embedding_from_image(img_path: str):
+    """
+    Returns the first detected face embedding from image_path.
+    Returns None if no face found.
+    """
+    try:
+        load_model()
+        img = cv2.imread(img_path)
+        if img is None:
+            print("[get_face_embedding] Could not read image:", img_path)
+            return None
+        faces = model.get(img)
+        if not faces:
+            print("[get_face_embedding] No face detected in:", img_path)
+            return None
+        emb = faces[0].normed_embedding.astype(np.float32)
+        return emb
+    except Exception as e:
+        print("[get_face_embedding] Error:", e)
+        return None
+
+
+
 #  ===============================
 #  Embeddings loading
 #  ===============================

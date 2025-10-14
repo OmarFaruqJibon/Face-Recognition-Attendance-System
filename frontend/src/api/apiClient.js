@@ -77,6 +77,11 @@ export async function markAsBad(unknownId, name, reason) {
 
 // ---------------------BAD PEOPLE SECTION -------------------
 
+export async function addBadPerson(formData) {
+  const res = await client.post("/bad_people", formData);
+  return res.data;
+}
+
 // Fetch all bad people
 export async function getBadPeople() {
   const res = await client.get("/bad_people");

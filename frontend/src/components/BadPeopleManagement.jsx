@@ -1,142 +1,291 @@
+// frontend/src/components/BadPeopleManagement.jsx
 import React, { useState } from "react";
-import { deleteBadPerson, updateBadPerson } from "../api/apiClient";
-import { Trash2, UserCircle2, Edit2 } from "lucide-react";
+import {
+  deleteBadPerson,
+  updateBadPerson,
+  addBadPerson,
+} from "../api/apiClient";
+import { Trash2, UserCircle2, Edit2, PlusCircle } from "lucide-react";
 
 export default function BadPeopleManagement({
   badPeople = [],
   onBadPeopleChanged,
 }) {
   const [selectedPerson, setSelectedPerson] = useState(null);
-  const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: "", role: "bad", reason: "" });
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    role: "bad",
+    reason: "",
+  });
+  const [addForm, setAddForm] = useState({
+    name: "",
+    role: "bad",
+    reason: "",
+    image: null,
+  });
+  const [loading, setLoading] = useState(false);
 
   function openEditModal(person) {
     setSelectedPerson(person);
-    setForm({
+    setEditForm({
       name: person.name || "",
       role: person.role || "bad",
       reason: person.reason || "",
     });
-    setShowModal(true);
+    setShowEditModal(true);
   }
 
   async function handleUpdate(e) {
     e.preventDefault();
+    if (!selectedPerson) return;
+    setLoading(true);
     try {
-      await updateBadPerson(selectedPerson._id, form);
+      await updateBadPerson(selectedPerson._id, editForm);
       const updatedList = badPeople.map((p) =>
-        p._id === selectedPerson._id ? { ...p, ...form } : p
+        p._id === selectedPerson._id ? { ...p, ...editForm } : p
       );
       onBadPeopleChanged && onBadPeopleChanged(updatedList);
-      setShowModal(false);
+      setShowEditModal(false);
     } catch (err) {
-      alert("Update failed: " + err.message);
+      alert("Update failed: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setLoading(false);
     }
   }
 
   async function handleDelete(id) {
     if (!confirm("Delete this bad person?")) return;
+    setLoading(true);
     try {
       await deleteBadPerson(id);
       onBadPeopleChanged &&
         onBadPeopleChanged(badPeople.filter((p) => p._id !== id));
     } catch (err) {
-      alert("Delete failed: " + err.message);
+      alert("Delete failed: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAdd(e) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append("name", addForm.name);
+      formData.append("role", addForm.role);
+      formData.append("reason", addForm.reason);
+      if (addForm.image) formData.append("image", addForm.image);
+
+      const res = await addBadPerson(formData); // returns { success: true, data: {...} }
+      const newPerson = res.data;
+      // prepend new person so it's visible immediately
+      onBadPeopleChanged && onBadPeopleChanged([newPerson, ...badPeople]);
+      setAddForm({ name: "", role: "bad", reason: "", image: null });
+      setShowAddModal(false);
+    } catch (err) {
+      alert("Add failed: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
-    <section className="bg-white p-4 rounded shadow mt-6">
-      <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
-        Bad People
-        <span className="ml-1 text-sm text-gray-500">({badPeople.length})</span>
-      </h3>
-      <div className="h-56 overflow-auto">
-        {badPeople.map((p) => (
-          <div
-            key={p._id}
-            className="flex items-center gap-3 p-2 border-b hover:bg-gray-50 transition"
-          >
-            <img
-              src={`${import.meta.env.VITE_API_BASE}${p.image_path}`}
-              alt={p.name}
-              className="w-12 h-12 object-cover rounded"
-            />
-            <div className="flex-1">
-              <div className="font-medium text-gray-800">{p.name}</div>
-              <div className="text-xs text-gray-500">Reason: {p.reason}</div>
-              <div className="text-xs text-gray-400">
-                Added: {new Date(p.created_at).toLocaleString()}
-              </div>
-            </div>
-            <button
-              onClick={() => openEditModal(p)}
-              className="flex items-center gap-1 cursor-pointer text-blue-800 hover:text-white hover:bg-blue-800 border border-blue-700 transition px-2 py-1.5 rounded-md text-sm font-medium"
-            >
-              <Edit2 size={16} />
-            </button>
-            <button
-              onClick={() => handleDelete(p._id)}
-              className="flex items-center gap-1 cursor-pointer text-red-800 hover:text-white hover:bg-red-600 border border-red-600 transition px-2 py-1.5 rounded-md text-sm font-medium"
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        ))}
+    <section className="bg-white p-4 rounded-2xl shadow mt-6 border border-gray-100">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+          Bad People
+          <span className="ml-1 text-sm text-gray-500">
+            ({badPeople.length})
+          </span>
+        </h3>
+
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="flex items-center gap-2 px-3 py-2 rounded-md bg-red-600 hover:bg-red-700 text-white text-sm font-medium shadow-sm transition"
+        >
+          <PlusCircle size={16} />
+          Add
+        </button>
       </div>
 
-      {/* === Edit Modal === */}
-      {showModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
-          <div className="bg-white rounded-lg p-6 w-96 shadow-lg">
-            <h2 className="text-lg font-semibold mb-4 text-gray-800">
+      <div className="h-56 overflow-auto divide-y divide-gray-100">
+        {badPeople.length === 0 ? (
+          <div className="text-gray-500 text-center py-6">
+            No bad people found.
+          </div>
+        ) : (
+          badPeople.map((p) => (
+            <div
+              key={p._id}
+              className="flex items-center gap-3 p-3 hover:bg-gray-50 transition"
+            >
+              {p.image_path ? (
+                <img
+                  src={`${import.meta.env.VITE_API_BASE}${p.image_path}`}
+                  alt={p.name}
+                  className="w-12 h-12 object-cover rounded-lg border"
+                />
+              ) : (
+                <UserCircle2 className="w-12 h-12 text-gray-400" />
+              )}
+
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-gray-800 truncate">
+                  {p.name}
+                </div>
+                <div className="text-xs text-gray-500 truncate">
+                  Reason: {p.reason}
+                </div>
+                <div className="text-xs text-gray-400">
+                  Added: {new Date(p.created_at).toLocaleString()}
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => openEditModal(p)}
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-md border border-blue-600 text-blue-700 hover:bg-blue-600 hover:text-white transition text-sm"
+                >
+                  <Edit2 size={16} />
+                </button>
+                <button
+                  onClick={() => handleDelete(p._id)}
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-md border border-red-600 text-red-700 hover:bg-red-600 hover:text-white transition text-sm"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Edit Modal */}
+      {showEditModal && selectedPerson && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg w-[420px] p-6">
+            <h4 className="text-lg font-semibold text-gray-800 mb-4">
               Update Bad Person
-            </h2>
+            </h4>
             <form onSubmit={handleUpdate} className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium mb-1">Name</label>
+              <label className="block text-sm">
+                Name
                 <input
                   type="text"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full border rounded px-2 py-1"
+                  value={editForm.name}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, name: e.target.value })
+                  }
+                  className="w-full mt-1 border rounded px-3 py-2"
                   required
                 />
-              </div>
+              </label>
 
-              <div>
-                <label className="block text-sm font-medium mb-1">Role</label>
+              <label className="block text-sm">
+                Role
                 <input
                   type="text"
-                  value={form.role}
-                  onChange={(e) => setForm({ ...form, role: e.target.value })}
-                  className="w-full border rounded px-2 py-1"
+                  value={editForm.role}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, role: e.target.value })
+                  }
+                  className="w-full mt-1 border rounded px-3 py-2"
                 />
-              </div>
+              </label>
 
-              <div>
-                <label className="block text-sm font-medium mb-1">Reason</label>
+              <label className="block text-sm">
+                Reason
                 <textarea
-                  value={form.reason}
-                  onChange={(e) => setForm({ ...form, reason: e.target.value })}
-                  className="w-full border rounded px-2 py-1"
-                  rows="2"
+                  value={editForm.reason}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, reason: e.target.value })
+                  }
+                  className="w-full mt-1 border rounded px-3 py-2"
+                  rows={3}
                 />
-              </div>
+              </label>
 
-              <div className="flex justify-end gap-2 mt-4">
+              <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-3 py-1 border rounded text-sm"
+                  onClick={() => setShowEditModal(false)}
+                  className="px-4 py-2 rounded-md border"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                  className="px-4 py-2 rounded-md bg-green-600 text-white"
                 >
-                  Save
+                  {loading ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg w-[420px] p-6">
+            <h4 className="text-lg font-semibold text-gray-800 mb-4">
+              Add Bad Person
+            </h4>
+            <form onSubmit={handleAdd} className="space-y-3">
+              <label className="block text-sm">
+                Name
+                <input
+                  type="text"
+                  value={addForm.name}
+                  onChange={(e) =>
+                    setAddForm({ ...addForm, name: e.target.value })
+                  }
+                  className="w-full mt-1 border rounded px-3 py-2"
+                  required
+                />
+              </label>
+
+              <label className="block text-sm">
+                Reason
+                <textarea
+                  value={addForm.reason}
+                  onChange={(e) =>
+                    setAddForm({ ...addForm, reason: e.target.value })
+                  }
+                  className="w-full mt-1 border rounded px-3 py-2"
+                  rows={3}
+                />
+              </label>
+
+              <label className="block text-sm">
+                Upload Image
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) =>
+                    setAddForm({ ...addForm, image: e.target.files[0] })
+                  }
+                  className="w-full mt-1"
+                />
+              </label>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-4 py-2 rounded-md border"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-md bg-red-600 text-white"
+                >
+                  {loading ? "Adding..." : "Add"}
                 </button>
               </div>
             </form>
