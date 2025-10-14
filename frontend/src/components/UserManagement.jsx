@@ -35,7 +35,8 @@ export default function UserManagement({ users = [], onUsersChanged }) {
     setLoading(true);
     try {
       await deleteUser(selectedUser._id);
-      onUsersChanged && onUsersChanged(users.filter((u) => u._id !== selectedUser._id));
+      onUsersChanged &&
+        onUsersChanged(users.filter((u) => u._id !== selectedUser._id));
       closeModals();
     } catch (e) {
       alert("Delete failed: " + (e.response?.data?.detail || e.message));
@@ -59,9 +60,7 @@ export default function UserManagement({ users = [], onUsersChanged }) {
       // Update local list
       onUsersChanged &&
         onUsersChanged(
-          users.map((u) =>
-            u._id === selectedUser._id ? { ...u, ...body } : u
-          )
+          users.map((u) => (u._id === selectedUser._id ? { ...u, ...body } : u))
         );
 
       closeModals();
@@ -107,14 +106,14 @@ export default function UserManagement({ users = [], onUsersChanged }) {
               <div className="flex gap-2">
                 <button
                   onClick={() => openUpdateModal(u)}
-                  className="flex items-center gap-1 text-blue-800 hover:text-white hover:bg-blue-800 border border-blue-700 transition px-2 py-1.5 rounded-md text-sm font-medium"
+                  className="flex items-center gap-1 cursor-pointer text-blue-800 hover:text-white hover:bg-blue-800 border border-blue-700 transition px-2 py-1.5 rounded-md text-sm font-medium"
                 >
                   <Edit2 size={16} />
                 </button>
 
                 <button
                   onClick={() => openDeleteModal(u)}
-                  className="flex items-center gap-1 text-red-800 hover:text-white hover:bg-red-600 border border-red-600 transition px-2 py-1.5 rounded-md text-sm font-medium"
+                  className="flex items-center gap-1 cursor-pointer text-red-800 hover:text-white hover:bg-red-600 border border-red-600 transition px-2 py-1.5 rounded-md text-sm font-medium"
                 >
                   <Trash2 size={16} />
                 </button>

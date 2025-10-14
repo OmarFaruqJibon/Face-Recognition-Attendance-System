@@ -200,7 +200,35 @@ async def update_user(user_id: str, body: dict = Body(...)):
     return {"status": "ok", "updated_fields": update_data}
 
 
+# -------------------------- BAD PEOPLE SECTION -----------------
 
+@app.get("/bad_people")
+async def list_bad_people(limit: int = 50):
+    out = []
+    cursor = db.bad_people.find({}).sort("created_at", -1).limit(limit)
+    async for p in cursor:
+        out.append(serialize_doc(p))
+    return out
+
+@app.delete("/delete_bad_person/{user_id}")
+async def delete_bad_person(user_id: str):
+    res = await db.bad_people.delete_one({"_id": ObjectId(user_id)})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="person not found")
+    return {"status": "ok", "deleted_id": user_id}
+
+@app.put("/update_bad_person/{user_id}")
+async def update_bad_person(user_id: str, body: dict):
+    fields = {k: v for k, v in body.items() if k in ["name", "role", "reason"]}
+    if not fields:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+    res = await db.bad_people.update_one({"_id": ObjectId(user_id)}, {"$set": fields})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="person not found")
+    return {"status": "ok", "updated_id": user_id}
+
+
+# -------------------------- BAD PEOPLE SECTION -----------------
 
 
 

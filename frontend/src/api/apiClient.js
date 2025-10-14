@@ -68,11 +68,33 @@ export async function generateAttendance(dateStr) {
 }
 
 export async function markAsBad(unknownId, name, reason) {
-    const res = await client.post(`/admin/mark_bad_person/${unknownId}`, { 
-        name, 
-        reason 
-    });
-    return res.data;
+  const res = await client.post(`/admin/mark_bad_person/${unknownId}`, {
+    name,
+    reason,
+  });
+  return res.data;
 }
+
+// ---------------------BAD PEOPLE SECTION -------------------
+
+// Fetch all bad people
+export async function getBadPeople() {
+  const res = await client.get("/bad_people");
+  return res.data;
+}
+
+// Delete a bad person
+export async function deleteBadPerson(userId) {
+  const res = await client.delete(`/delete_bad_person/${userId}`);
+  return res.data;
+}
+
+// Update a bad person
+export async function updateBadPerson(userId, data) {
+  const res = await client.put(`/update_bad_person/${userId}`, data);
+  return res.data;
+}
+
+// ---------------------BAD PEOPLE SECTION -------------------
 
 export default client;

@@ -149,9 +149,9 @@ async def start_recognition_loop():
                     reason = bad_info.get('reason', '')
                     
                     if reason:
-                        label = f"BAD: {name} - {reason}"
+                        label = f"{name} - {reason}"
                     else:
-                        label = f"BAD: {name}"
+                        label = f"{name}"
                     
                     main_color = (0, 0, 255) # red
                     outline_color = (255, 255, 255)
