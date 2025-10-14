@@ -7,6 +7,7 @@ from bson.objectid import ObjectId
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi import status
 
 from app.db import db
 from app.ws_manager import manager
@@ -164,3 +165,14 @@ async def mark_bad_person(unknown_id: str, body: BadPersonBody):
     await recognition.reload_bad_embeddings()  # Reload bad embeddings
     
     return {"bad_person_id": str(res.inserted_id)}
+
+
+@app.delete("/users/{user_id}", status_code=status.HTTP_200_OK)
+async def delete_user(user_id: str):
+    """Delete a user by ID"""
+    res = await db.users.delete_one({"_id": ObjectId(user_id)})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="user not found")
+    # Optionally: cleanup from presence_events or unknowns if linked
+    await recognition.reload_known_embeddings()  # refresh memory
+    return {"status": "ok", "deleted_id": user_id}

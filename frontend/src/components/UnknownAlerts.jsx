@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import dayjs from "dayjs";
 
 export default function UnknownAlerts({
@@ -7,64 +7,98 @@ export default function UnknownAlerts({
     onIgnore,
     onMarkAsBad,
 }) {
+    const [showBadModal, setShowBadModal] = useState(false);
+    const [showApproveModal, setShowApproveModal] = useState(false);
+    const [modalData, setModalData] = useState({ id: null, name: "", reason: "" });
+
     // remove duplicate unknowns by _id
     const uniqueUnknowns = Array.from(
         new Map(unknownQueue.map((u) => [u.unknown_id, u])).values()
     );
 
-    // latest unknown (first item in the queue)
     const latest = uniqueUnknowns[0];
 
     async function handleIgnore(unknownId) {
         if (onIgnore) await onIgnore(unknownId);
     }
 
+    async function handleApprove(unknownId, name) {
+        if (onApprove) await onApprove(unknownId, name);
+    }
+
     async function handleMarkAsBad(unknownId, name, reason) {
         if (onMarkAsBad) await onMarkAsBad(unknownId, name, reason);
     }
 
-    return (
-        <section className="bg-white p-4 rounded shadow">
-            <h3 className="font-semibold mb-2">Unknown Alerts</h3>
+    const openApproveModal = (unknownId) => {
+        setModalData({ id: unknownId, name: "", reason: "" });
+        setShowApproveModal(true);
+    };
 
-            {!latest && <div className="text-sm text-gray-500">No recent unknowns</div>}
+    const openBadModal = (unknownId) => {
+        setModalData({ id: unknownId, name: "", reason: "" });
+        setShowBadModal(true);
+    };
+
+    const closeModals = () => {
+        setShowApproveModal(false);
+        setShowBadModal(false);
+        setModalData({ id: null, name: "", reason: "" });
+    };
+
+    const submitApprove = async () => {
+        if (!modalData.name.trim()) {
+            alert("Please enter a name");
+            return;
+        }
+        await handleApprove(modalData.id, modalData.name);
+        closeModals();
+    };
+
+    const submitBad = async () => {
+        if (!modalData.name.trim() || !modalData.reason.trim()) {
+            alert("Please fill in both fields");
+            return;
+        }
+        await handleMarkAsBad(modalData.id, modalData.name, modalData.reason);
+        closeModals();
+    };
+
+    return (
+        <section className="bg-white p-4 rounded-xl shadow-md border border-gray-100">
+            <h3 className="font-semibold text-gray-800 mb-3 text-lg">Unknown Alerts</h3>
+
+            {!latest && (
+                <div className="text-sm text-gray-500 italic">No recent unknowns</div>
+            )}
 
             {latest && (
-                <div className="flex gap-3 items-start mb-3">
+                <div className="flex gap-4 items-start mb-4 bg-gray-50 p-3 rounded-lg shadow-sm">
                     <img
                         src={`${import.meta.env.VITE_API_BASE || ""}${latest.image_path}`}
                         alt="unknown"
-                        className="w-24 h-24 object-cover rounded snapshot"
+                        className="w-24 h-24 object-cover rounded-lg border"
                     />
                     <div className="flex-1">
-                        <div className="mb-1 text-sm text-gray-600">
+                        <div className="text-sm text-gray-600 mb-2">
+                            Detected:{" "}
                             {dayjs(latest.first_seen).format("YYYY-MM-DD HH:mm:ss")}
                         </div>
                         <div className="flex gap-2 flex-wrap">
                             <button
-                                className="px-2 py-1 bg-green-700 text-white rounded text-sm"
-                                onClick={() => {
-                                    const name = prompt("Name for this user:");
-                                    if (name) onApprove(latest.unknown_id, name);
-                                }}
+                                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium shadow-sm"
+                                onClick={() => openApproveModal(latest.unknown_id)}
                             >
                                 Approve
                             </button>
                             <button
-                                className="px-2 py-1 bg-red-700 text-white rounded text-sm"
-                                onClick={() => {
-                                    const name = prompt("Name for this bad person:");
-                                    if (!name) return;
-                                    const reason = prompt("Reason/Comment:");
-                                    if (reason !== null) {
-                                        handleMarkAsBad(latest.unknown_id, name, reason);
-                                    }
-                                }}
+                                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium shadow-sm"
+                                onClick={() => openBadModal(latest.unknown_id)}
                             >
                                 Mark as Bad
                             </button>
                             <button
-                                className="px-2 py-1 bg-orange-700 text-white rounded text-sm"
+                                className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium shadow-sm"
                                 onClick={() => handleIgnore(latest.unknown_id)}
                             >
                                 Ignore
@@ -74,43 +108,40 @@ export default function UnknownAlerts({
                 </div>
             )}
 
-            {/* Remaining unknowns list (skip latest to avoid duplicate) */}
-            <div className="h-40 overflow-auto">
+            {/* Remaining unknowns list */}
+            <div className="h-52 overflow-auto divide-y divide-gray-100">
                 {uniqueUnknowns.slice(1).map((u) => (
-                    <div key={u.unknown_id} className="flex items-center gap-2 p-1 border-b">
+                    <div
+                        key={u.unknown_id}
+                        className="flex items-center gap-3 py-2 hover:bg-gray-50 transition"
+                    >
                         <img
                             src={`${import.meta.env.VITE_API_BASE || ""}${u.image_path}`}
                             alt="unknown"
-                            className="w-12 h-12 object-cover rounded snapshot"
+                            className="w-12 h-12 object-cover rounded-lg border"
                         />
                         <div className="flex-1">
-                            <div className="text-sm">ID: {u.unknown_id}</div>
+                            <div className="text-sm font-medium text-gray-700">
+                                ID: {u.unknown_id}
+                            </div>
                             <div className="text-xs text-gray-500">
                                 {dayjs(u.first_seen).format("HH:mm:ss")}
                             </div>
-                            <div className="flex gap-2 mt-1 flex-wrap">
+                            <div className="flex gap-2 mt-2">
                                 <button
-                                    className="text-xs px-2 py-1 bg-indigo-600 text-white rounded"
-                                    onClick={() => {
-                                        const name = prompt("Name for this user:");
-                                        if (name) onApprove(u.unknown_id, name);
-                                    }}
+                                    className="text-xs px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded"
+                                    onClick={() => openApproveModal(u.unknown_id)}
                                 >
                                     Approve
                                 </button>
                                 <button
-                                    className="text-xs px-2 py-1 bg-red-600 text-white rounded"
-                                    onClick={() => {
-                                        const name = prompt("Name for this bad person:");
-                                        if (!name) return;
-                                        const reason = prompt("Reason/Comment:");
-                                        if (reason !== null) handleMarkAsBad(u.unknown_id, name, reason);
-                                    }}
+                                    className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded"
+                                    onClick={() => openBadModal(u.unknown_id)}
                                 >
                                     Mark as Bad
                                 </button>
                                 <button
-                                    className="text-xs px-2 py-1 bg-orange-600 text-white rounded"
+                                    className="text-xs px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded"
                                     onClick={() => handleIgnore(u.unknown_id)}
                                 >
                                     Ignore
@@ -120,6 +151,105 @@ export default function UnknownAlerts({
                     </div>
                 ))}
             </div>
+
+            {/* 🌟 Approve Modal */}
+            {showApproveModal && (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                    <div className="bg-white p-6 rounded-xl shadow-xl w-96 relative animate-fadeIn">
+                        <h3 className="text-xl font-semibold text-center text-gray-800 mb-5">
+                            Approve Person
+                        </h3>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Name
+                            <input
+                                type="text"
+                                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none"
+                                value={modalData.name}
+                                placeholder="Enter person's name"
+                                onChange={(e) =>
+                                    setModalData((prev) => ({
+                                        ...prev,
+                                        name: e.target.value,
+                                    }))
+                                }
+                            />
+                        </label>
+
+                        <div className="flex justify-end gap-3 mt-6">
+                            <button
+                                className="px-4 py-2 rounded-lg bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium"
+                                onClick={closeModals}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium"
+                                onClick={submitApprove}
+                            >
+                                Approve
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 🌟 Mark as Bad Modal */}
+            {showBadModal && (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                    <div className="bg-white p-6 rounded-xl shadow-xl w-96 relative animate-fadeIn">
+                        <h3 className="text-xl font-semibold text-center text-gray-800 mb-5">
+                            Mark as Bad
+                        </h3>
+
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                            Name
+                            <input
+                                type="text"
+                                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none"
+                                placeholder="Enter name"
+                                value={modalData.name}
+                                onChange={(e) =>
+                                    setModalData((prev) => ({
+                                        ...prev,
+                                        name: e.target.value,
+                                    }))
+                                }
+                            />
+                        </label>
+
+                        <label className="block text-sm font-medium text-gray-700 mb-4">
+                            Reason
+                            <textarea
+                                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none"
+                                rows="3"
+                                placeholder="Enter reason"
+                                value={modalData.reason}
+                                onChange={(e) =>
+                                    setModalData((prev) => ({
+                                        ...prev,
+                                        reason: e.target.value,
+                                    }))
+                                }
+                            ></textarea>
+                        </label>
+
+                        <div className="flex justify-end gap-3 mt-4">
+                            <button
+                                className="px-4 py-2 rounded-lg bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium"
+                                onClick={closeModals}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium"
+                                onClick={submitBad}
+                            >
+                                Submit
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </section>
     );
 }
