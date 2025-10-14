@@ -67,4 +67,12 @@ export async function generateAttendance(dateStr) {
   return res.data;
 }
 
+export async function markAsBad(unknownId, name, reason) {
+    const res = await client.post(`/admin/mark_bad_person/${unknownId}`, { 
+        name, 
+        reason 
+    });
+    return res.data;
+}
+
 export default client;

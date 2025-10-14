@@ -36,6 +36,10 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 class ApproveBody(BaseModel):
     name: str
 
+class BadPersonBody(BaseModel):
+    name: str
+    reason: str = "" 
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -138,3 +142,25 @@ async def generate_attendance(date_str: str):
 async def reload_embeddings():
     await recognition.reload_known_embeddings()
     return {"status": "ok", "loaded": len(recognition.known_embeddings)}
+
+
+@app.post("/admin/mark_bad_person/{unknown_id}")
+async def mark_bad_person(unknown_id: str, body: BadPersonBody):
+    unk = await db.unknowns.find_one({"_id": ObjectId(unknown_id)})
+    if not unk:
+        raise HTTPException(status_code=404, detail="unknown not found")
+    
+    bad_person_doc = {
+        "name": body.name,
+        "reason": body.reason,  # Store the reason/comment
+        "image_path": unk.get("image_path"),
+        "embedding": unk.get("embedding"),
+        "first_seen": unk.get("first_seen"),
+        "last_seen": unk.get("last_seen"),
+        "created_at": datetime.datetime.utcnow(),
+    }
+    res = await db.bad_people.insert_one(bad_person_doc)
+    await db.unknowns.delete_one({"_id": ObjectId(unknown_id)})
+    await recognition.reload_bad_embeddings()  # Reload bad embeddings
+    
+    return {"bad_person_id": str(res.inserted_id)}
