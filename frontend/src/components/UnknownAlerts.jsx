@@ -86,19 +86,19 @@ export default function UnknownAlerts({
                         </div>
                         <div className="flex gap-2 flex-wrap">
                             <button
-                                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium shadow-sm"
+                                className="px-2 cursor-pointer py-1.5 bg-green-700 hover:bg-green-800 text-white rounded-lg text-sm font-medium shadow-sm"
                                 onClick={() => openApproveModal(latest.unknown_id)}
                             >
                                 Approve
                             </button>
                             <button
-                                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium shadow-sm"
+                                className="px-2 cursor-pointer py-1.5 bg-red-600 hover:bg-red-800 text-white rounded-lg text-sm font-medium shadow-sm"
                                 onClick={() => openBadModal(latest.unknown_id)}
                             >
                                 Mark as Bad
                             </button>
                             <button
-                                className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium shadow-sm"
+                                className="px-2 cursor-pointer py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium shadow-sm"
                                 onClick={() => handleIgnore(latest.unknown_id)}
                             >
                                 Ignore
@@ -129,19 +129,19 @@ export default function UnknownAlerts({
                             </div>
                             <div className="flex gap-2 mt-2">
                                 <button
-                                    className="text-xs px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded"
+                                    className="text-xs cursor-pointer px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded"
                                     onClick={() => openApproveModal(u.unknown_id)}
                                 >
                                     Approve
                                 </button>
                                 <button
-                                    className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded"
+                                    className="text-xs cursor-pointer px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded"
                                     onClick={() => openBadModal(u.unknown_id)}
                                 >
                                     Mark as Bad
                                 </button>
                                 <button
-                                    className="text-xs px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded"
+                                    className="text-xs cursor-pointer px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded"
                                     onClick={() => handleIgnore(u.unknown_id)}
                                 >
                                     Ignore

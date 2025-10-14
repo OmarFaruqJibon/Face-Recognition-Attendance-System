@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi import status
+from fastapi import Body
 
 from app.db import db
 from app.ws_manager import manager
@@ -166,7 +167,7 @@ async def mark_bad_person(unknown_id: str, body: BadPersonBody):
     
     return {"bad_person_id": str(res.inserted_id)}
 
-
+# DELETE USER
 @app.delete("/users/{user_id}", status_code=status.HTTP_200_OK)
 async def delete_user(user_id: str):
     """Delete a user by ID"""
@@ -176,3 +177,33 @@ async def delete_user(user_id: str):
     # Optionally: cleanup from presence_events or unknowns if linked
     await recognition.reload_known_embeddings()  # refresh memory
     return {"status": "ok", "deleted_id": user_id}
+
+
+# UPDATE USER
+@app.put("/users/{user_id}")
+async def update_user(user_id: str, body: dict = Body(...)):
+    """Update user info (name, role, note)"""
+    allowed_fields = {"name", "role", "note"}
+    update_data = {k: v for k, v in body.items() if k in allowed_fields}
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+
+    result = await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": update_data}
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"status": "ok", "updated_fields": update_data}
+
+
+
+
+
+
+
+
+
