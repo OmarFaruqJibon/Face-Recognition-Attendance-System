@@ -1,4 +1,4 @@
-//PresenceList.jsx
+// src/components/PresenceList.jsx
 
 import React, { useEffect, useState } from "react";
 import { fetchPresence } from "../api/apiClient";

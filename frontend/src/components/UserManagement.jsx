@@ -1,4 +1,4 @@
-// UserManagement.jsx
+// src/components/UserManagement.jsx
 
 import React from "react";
 import { deleteUser } from "../api/apiClient";

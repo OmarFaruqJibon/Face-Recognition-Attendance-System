@@ -1,4 +1,4 @@
-//apiClint.js
+// src/api/apiClint.js
 
 import axios from "axios";
 

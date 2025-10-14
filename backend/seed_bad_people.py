@@ -1,3 +1,5 @@
+#backend/seed_bad_people.py
+
 import os
 import sys
 import uuid

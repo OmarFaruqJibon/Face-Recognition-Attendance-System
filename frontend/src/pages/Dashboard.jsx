@@ -1,3 +1,5 @@
+// src/pages/Dashboard.jsx
+
 import React, { useCallback, useEffect, useState, useRef } from "react";
 import useWebsocket from "../hooks/useWebsocket";
 import {
