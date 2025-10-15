@@ -33,6 +33,7 @@ __pycache__
 *.pyd
 
 models
+fonts
 
 .env
 

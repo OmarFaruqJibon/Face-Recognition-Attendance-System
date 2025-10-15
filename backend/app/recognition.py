@@ -7,6 +7,7 @@ import numpy as np
 import cv2
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 from app.db import db
 from app.ws_manager import manager
@@ -129,108 +130,107 @@ def match_bad(emb: np.ndarray):
 # ===================================================
 def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
     """
-    Draws a clean rounded transparent label (no badges, no bounding box),
-    with centered label width.
+    Draws a modern AI-style floating label:
+    - Glassy semi-transparent card
+    - Gradient tint background
+    - Rounded corners and subtle shadow
+    - No bounding box around face
     """
     try:
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        title_scale = 0.7
-        note_scale = 0.55
-        thickness_title = 2
-        thickness_note = 1
+        # --- Convert OpenCV -> PIL ---
+        img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(img_pil, "RGBA")
 
-        # === Color schemes per type ===
+        # --- Fonts ---
+        font_title = ImageFont.truetype("fonts/Roboto-Bold.ttf", 22)
+        font_note = ImageFont.truetype("fonts/Roboto-Regular.ttf", 17)
+
+        # --- Label content & colors ---
         if person_type == "known":
-            main_color = (0, 220, 0)  # bright green
-            text_main = (255, 255, 255)
-            text_sub = (220, 255, 220)
+            grad_start, grad_end = (80, 255, 150, 150), (30, 150, 90, 150)
+            title_color, note_color = (20, 60, 20), (50, 50, 50)
+            lines = [name or "Known Person"]
+            if note:
+                lines.append(note)
         elif person_type == "bad":
-            main_color = (0, 0, 255)  # red
-            text_main = (255, 255, 255)
-            text_sub = (220, 220, 220)
+            grad_start, grad_end = (255, 70, 70, 170), (180, 0, 0, 170)
+            title_color, note_color = (255, 255, 255), (235, 235, 235)
+            lines = [name or "Suspect"]
+            if note:
+                lines.append(note)
         else:
-            main_color = (0, 140, 255)  # orange for unknown
-            text_main = (255, 255, 255)
-            text_sub = (240, 240, 240)
+            grad_start, grad_end = (255, 170, 60, 170), (240, 110, 0, 170)
+            title_color, note_color = (255, 255, 255), (245, 245, 245)
+            lines = ["Unknown"]
 
-        # === Text lines ===
-        lines = [name or "Unknown"]
-        if note:
-            lines.append(note)
+        # --- Measure text area ---
+        text_boxes = [draw.textbbox((0, 0), line, font=font_title if i == 0 else font_note)
+                      for i, line in enumerate(lines)]
+        width = max(w - x for x, y, w, h in text_boxes) + 28
+        height = sum(h - y for x, y, w, h in text_boxes) + 24 + (len(lines) - 1) * 5
 
-        # === Compute text sizes ===
-        text_sizes = [
-            cv2.getTextSize(
-                t,
-                font,
-                title_scale if i == 0 else note_scale,
-                thickness_title if i == 0 else thickness_note,
-            )[0]
-            for i, t in enumerate(lines)
-        ]
+        # --- Position above the face ---
+        text_x = x1
+        text_y = max(0, y1 - height - 15)
+        radius = 14
 
-        text_width = max(w for w, h in text_sizes)
-        width = max(text_width + 30, (x2 - x1))  # card follows face width
-        height = sum(h for w, h in text_sizes) + 30 + (len(lines) - 1) * 5
+        # --- Create blurred background region (for glass effect) ---
+        glass = img_pil.crop((text_x, text_y, text_x + width, text_y + height))
+        glass = glass.filter(ImageFilter.GaussianBlur(10))
 
-        # === Center label horizontally above the face ===
-        text_x = x1 + ((x2 - x1) - width) // 2
-        text_y = max(10, y1 - height - 10)
+        # --- Overlay gradient tint on blurred area ---
+        gradient = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        for y in range(height):
+            r = int(grad_start[0] + (grad_end[0] - grad_start[0]) * (y / height))
+            g = int(grad_start[1] + (grad_end[1] - grad_start[1]) * (y / height))
+            b = int(grad_start[2] + (grad_end[2] - grad_start[2]) * (y / height))
+            a = int(grad_start[3] + (grad_end[3] - grad_start[3]) * (y / height))
+            ImageDraw.Draw(gradient).line([(0, y), (width, y)], fill=(r, g, b, a), width=1)
 
-        # === Transparent rounded card ===
-        overlay = frame.copy()
-        alpha = 0.35
-        radius = 10
+        # Merge glass blur + gradient
+        glass = Image.alpha_composite(glass.convert("RGBA"), gradient)
 
-        # Create rounded rectangle on overlay
-        sub_img = overlay[text_y:text_y + height, text_x:text_x + width]
-        if sub_img.shape[0] > 0 and sub_img.shape[1] > 0:
-            mask = np.zeros_like(sub_img, dtype=np.uint8)
+        # --- Mask for rounded corners ---
+        mask = Image.new("L", (width, height), 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.rounded_rectangle([(0, 0), (width, height)], radius=radius, fill=255)
 
-            # Draw rounded rectangle on mask
-            cv2.rectangle(mask, (radius, 0), (width - radius, height), main_color, -1)
-            cv2.rectangle(mask, (0, radius), (width, height - radius), main_color, -1)
-            cv2.circle(mask, (radius, radius), radius, main_color, -1)
-            cv2.circle(mask, (width - radius - 1, radius), radius, main_color, -1)
-            cv2.circle(mask, (radius, height - radius - 1), radius, main_color, -1)
-            cv2.circle(mask, (width - radius - 1, height - radius - 1), radius, main_color, -1)
+        # --- Shadow below the card ---
+        shadow = Image.new("RGBA", (width + 6, height + 6), (0, 0, 0, 0))
+        shadow_draw = ImageDraw.Draw(shadow)
+        shadow_draw.rounded_rectangle(
+            [(3, 3), (width + 3, height + 3)], radius=radius, fill=(0, 0, 0, 100)
+        )
+        shadow = shadow.filter(ImageFilter.GaussianBlur(4))
+        img_pil.paste(shadow, (text_x - 2, text_y - 2), shadow)
 
-            # Blend rounded rectangle onto overlay
-            blended = cv2.addWeighted(sub_img, 1 - alpha, mask, alpha, 0)
-            overlay[text_y:text_y + height, text_x:text_x + width] = blended
+        # --- Paste the glass card onto main image ---
+        img_pil.paste(glass, (text_x, text_y), mask)
 
-        # Apply overlay to frame
-        frame = cv2.addWeighted(overlay, 1, frame, 0, 0)
+        # --- Draw white border ---
+        draw.rounded_rectangle(
+            [(text_x, text_y), (text_x + width, text_y + height)],
+            radius=radius,
+            outline=(255, 255, 255, 90),
+            width=2,
+        )
 
-        # === Rounded border ===
-        cv2.rectangle(frame, (text_x, text_y), (text_x + width, text_y + height), main_color, 1, cv2.LINE_AA)
+        # --- Draw text on top ---
+        ty = text_y + 12
+        for i, line in enumerate(lines):
+            color = title_color if i == 0 else note_color
+            font = font_title if i == 0 else font_note
+            draw.text((text_x + 14, ty), line, font=font, fill=color)
+            ty += (text_boxes[i][3] - text_boxes[i][1]) + 6
 
-        # === Text rendering ===
-        y = text_y + 20
-        for i, t in enumerate(lines):
-            color = text_main if i == 0 else text_sub
-            fs = title_scale if i == 0 else note_scale
-            th = thickness_title if i == 0 else thickness_note
-            cv2.putText(
-                frame,
-                t,
-                (text_x + 12, y + text_sizes[i][1]),
-                font,
-                fs,
-                color,
-                th,
-                cv2.LINE_AA,
-            )
-            y += text_sizes[i][1] + 6
-
-        # ✅ Removed face bounding box entirely
+        # --- Convert back to OpenCV ---
+        frame = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
 
         return frame
 
     except Exception as e:
         print("[draw_ai_label] error:", e)
         return frame
-
 # ===================================================
 # Recognition Loop
 # ===================================================
