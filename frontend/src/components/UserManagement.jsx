@@ -106,17 +106,17 @@ export default function UserManagement({ users = [], onUsersChanged }) {
         </h3>
         <button
           onClick={openAddModal}
-          className="flex items-center gap-2 px-3 py-2 rounded-md bg-green-600 hover:bg-green-700 text-white text-sm font-medium shadow-sm transition"
+          className="flex items-center gap-1 text-green-700 cursor-pointer text-sm font-medium transition"
         >
-          <PlusCircle size={18} />
-          Add User
+          <PlusCircle size={14} />
+          Add New
         </button>
       </div>
 
       <div className="overflow-y-auto max-h-[420px] divide-y divide-gray-100">
         {users.length === 0 ? (
           <div className="text-gray-500 text-center py-8 text-sm">
-            No users found.
+            No users found
           </div>
         ) : (
           users.map((u) => (

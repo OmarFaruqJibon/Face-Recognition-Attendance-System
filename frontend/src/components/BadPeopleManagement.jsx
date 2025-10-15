@@ -104,17 +104,17 @@ export default function BadPeopleManagement({
 
         <button
           onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded-md bg-red-600 hover:bg-red-700 text-white text-sm font-medium shadow-sm transition"
+          className="flex items-center gap-1 text-green-700 cursor-pointer text-sm font-medium transition"
         >
-          <PlusCircle size={16} />
-          Add
+          <PlusCircle size={14} />
+          Add New
         </button>
       </div>
 
       <div className="h-56 overflow-auto divide-y divide-gray-100">
         {badPeople.length === 0 ? (
-          <div className="text-gray-500 text-center py-6">
-            No bad people found.
+          <div className="text-gray-500 text-sm text-center py-6">
+            No bad people found
           </div>
         ) : (
           badPeople.map((p) => (
@@ -212,7 +212,7 @@ export default function BadPeopleManagement({
                 <button
                   type="button"
                   onClick={() => setShowEditModal(false)}
-                  className="px-4 py-2 rounded-md border"
+                  className="px-4 py-2 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100 text-sm font-medium transition"
                 >
                   Cancel
                 </button>
@@ -236,7 +236,7 @@ export default function BadPeopleManagement({
               Add Bad Person
             </h4>
             <form onSubmit={handleAdd} className="space-y-3">
-              <label className="block text-sm">
+              <label className="block text-sm font-medium text-gray-600">
                 Name
                 <input
                   type="text"
@@ -249,7 +249,7 @@ export default function BadPeopleManagement({
                 />
               </label>
 
-              <label className="block text-sm">
+              <label className="block text-sm font-medium text-gray-600">
                 Reason
                 <textarea
                   value={addForm.reason}
@@ -261,7 +261,7 @@ export default function BadPeopleManagement({
                 />
               </label>
 
-              <label className="block text-sm">
+              <label className="block text-sm font-medium text-gray-600">
                 Upload Image
                 <input
                   type="file"
@@ -269,7 +269,7 @@ export default function BadPeopleManagement({
                   onChange={(e) =>
                     setAddForm({ ...addForm, image: e.target.files[0] })
                   }
-                  className="w-full mt-1"
+                  className="w-full mt-1 text-sm text-gray-700"
                 />
               </label>
 
@@ -277,13 +277,17 @@ export default function BadPeopleManagement({
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 rounded-md border"
+                  className="px-4 py-2 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100 text-sm font-medium transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-md bg-red-600 text-white"
+                  className={`px-4 py-2 rounded-md text-white text-sm font-medium transition ${
+                    loading
+                      ? "bg-green-400 cursor-not-allowed"
+                      : "bg-green-600 hover:bg-green-700"
+                  }`}
                 >
                   {loading ? "Adding..." : "Add"}
                 </button>
