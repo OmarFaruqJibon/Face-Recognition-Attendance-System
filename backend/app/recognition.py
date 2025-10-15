@@ -19,17 +19,18 @@ THRESHOLD = float(os.getenv("THRESHOLD", "1.2"))
 RESIZE_WIDTH = int(os.getenv("RESIZE_WIDTH", "480"))
 ABSENCE_TIMEOUT = int(os.getenv("ABSENCE_TIMEOUT", "5"))
 model = None
-known_embeddings: dict = {} # user_id -> np.array
-user_names: dict = {} # user_id -> name
-bad_embeddings: dict = {} # bad_id -> np.array
-bad_names: dict = {} # bad_id -> {name, reason}
-active_presence: dict = {} # key -> presence info; keys: known:<uid>, bad:<bid>, unknown:<unknown_id>
+known_embeddings: dict = {}  # user_id -> np.array
+user_names: dict = {}  # user_id -> name
+user_notes: dict = {}  # user_id -> note (new)
+bad_embeddings: dict = {}  # bad_id -> np.array
+bad_names: dict = {}  # bad_id -> {name, reason}
+active_presence: dict = {}  # key -> presence info
+last_frame = None  # global annotated frame for streaming
 
-last_frame = None # global annotated frame for streaming
 
-#  ===============================
-#  Model loading
-#  ===============================
+# ===================================================
+# Model Loading
+# ===================================================
 def load_model():
     global model
     if model is None:
@@ -39,12 +40,8 @@ def load_model():
     return model
 
 
-
 def get_face_embedding_from_image(img_path: str):
-    """
-    Returns the first detected face embedding from image_path.
-    Returns None if no face found.
-    """
+    """Returns the first detected face embedding from image_path."""
     try:
         load_model()
         img = cv2.imread(img_path)
@@ -62,25 +59,31 @@ def get_face_embedding_from_image(img_path: str):
         return None
 
 
-
-#  ===============================
-#  Embeddings loading
-#  ===============================
+# ===================================================
+# Embeddings Loading
+# ===================================================
 async def reload_known_embeddings():
-    """Reload embeddings for known users."""
-    global known_embeddings, user_names
+    """Reload embeddings for known users and store name + note."""
+    global known_embeddings, user_names, user_notes
     known_embeddings = {}
     user_names = {}
+    user_notes = {}
     cursor = db.users.find({})
     async for u in cursor:
         if "embedding" in u and u["embedding"]:
             uid = str(u["_id"])
-            known_embeddings[uid] = np.array(u["embedding"], dtype=np.float32)
+            try:
+                known_embeddings[uid] = np.array(u["embedding"], dtype=np.float32)
+            except Exception:
+                # defensive: skip if embedding malformed
+                continue
+            # store name and note (note may be missing)
             user_names[uid] = u.get("name", f"User {uid[:4]}")
+            user_notes[uid] = u.get("note", "")  # <-- uses note field from DB
     print(f"[recognition] loaded {len(known_embeddings)} known embeddings")
 
+
 async def reload_bad_embeddings():
-    """Reload embeddings for bad people."""
     global bad_embeddings, bad_names
     bad_embeddings = {}
     bad_names = {}
@@ -89,16 +92,16 @@ async def reload_bad_embeddings():
         if "embedding" in b and b["embedding"]:
             bid = str(b["_id"])
             bad_embeddings[bid] = np.array(b["embedding"], dtype=np.float32)
-            # Store both name and reason
             bad_names[bid] = {
-                'name': b.get("name", f"Bad {bid[:4]}"),
-                'reason': b.get("reason", "")
+                "name": b.get("name", f"Bad {bid[:4]}"),
+                "reason": b.get("reason", ""),
             }
     print(f"[recognition] loaded {len(bad_embeddings)} bad embeddings")
 
-#  ===============================
-#  Matching helpers
-#  ===============================
+
+# ===================================================
+# Matching Helpers
+# ===================================================
 def match_known(emb: np.ndarray):
     best_id = None
     best_dist = float("inf")
@@ -108,6 +111,7 @@ def match_known(emb: np.ndarray):
             best_dist = d
             best_id = uid
     return best_id, best_dist
+
 
 def match_bad(emb: np.ndarray):
     best_id = None
@@ -119,9 +123,117 @@ def match_bad(emb: np.ndarray):
             best_id = bid
     return best_id, best_dist
 
-# ---
-# Recognition loop
-# ---
+
+# ===================================================
+# Beautiful Label Renderer
+# ===================================================
+def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
+    """
+    Draws a clean rounded transparent label (no badges, no bounding box),
+    with centered label width.
+    """
+    try:
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        title_scale = 0.7
+        note_scale = 0.55
+        thickness_title = 2
+        thickness_note = 1
+
+        # === Color schemes per type ===
+        if person_type == "known":
+            main_color = (0, 220, 0)  # bright green
+            text_main = (255, 255, 255)
+            text_sub = (220, 255, 220)
+        elif person_type == "bad":
+            main_color = (0, 0, 255)  # red
+            text_main = (255, 255, 255)
+            text_sub = (220, 220, 220)
+        else:
+            main_color = (0, 140, 255)  # orange for unknown
+            text_main = (255, 255, 255)
+            text_sub = (240, 240, 240)
+
+        # === Text lines ===
+        lines = [name or "Unknown"]
+        if note:
+            lines.append(note)
+
+        # === Compute text sizes ===
+        text_sizes = [
+            cv2.getTextSize(
+                t,
+                font,
+                title_scale if i == 0 else note_scale,
+                thickness_title if i == 0 else thickness_note,
+            )[0]
+            for i, t in enumerate(lines)
+        ]
+
+        text_width = max(w for w, h in text_sizes)
+        width = max(text_width + 30, (x2 - x1))  # card follows face width
+        height = sum(h for w, h in text_sizes) + 30 + (len(lines) - 1) * 5
+
+        # === Center label horizontally above the face ===
+        text_x = x1 + ((x2 - x1) - width) // 2
+        text_y = max(10, y1 - height - 10)
+
+        # === Transparent rounded card ===
+        overlay = frame.copy()
+        alpha = 0.35
+        radius = 10
+
+        # Create rounded rectangle on overlay
+        sub_img = overlay[text_y:text_y + height, text_x:text_x + width]
+        if sub_img.shape[0] > 0 and sub_img.shape[1] > 0:
+            mask = np.zeros_like(sub_img, dtype=np.uint8)
+
+            # Draw rounded rectangle on mask
+            cv2.rectangle(mask, (radius, 0), (width - radius, height), main_color, -1)
+            cv2.rectangle(mask, (0, radius), (width, height - radius), main_color, -1)
+            cv2.circle(mask, (radius, radius), radius, main_color, -1)
+            cv2.circle(mask, (width - radius - 1, radius), radius, main_color, -1)
+            cv2.circle(mask, (radius, height - radius - 1), radius, main_color, -1)
+            cv2.circle(mask, (width - radius - 1, height - radius - 1), radius, main_color, -1)
+
+            # Blend rounded rectangle onto overlay
+            blended = cv2.addWeighted(sub_img, 1 - alpha, mask, alpha, 0)
+            overlay[text_y:text_y + height, text_x:text_x + width] = blended
+
+        # Apply overlay to frame
+        frame = cv2.addWeighted(overlay, 1, frame, 0, 0)
+
+        # === Rounded border ===
+        cv2.rectangle(frame, (text_x, text_y), (text_x + width, text_y + height), main_color, 1, cv2.LINE_AA)
+
+        # === Text rendering ===
+        y = text_y + 20
+        for i, t in enumerate(lines):
+            color = text_main if i == 0 else text_sub
+            fs = title_scale if i == 0 else note_scale
+            th = thickness_title if i == 0 else thickness_note
+            cv2.putText(
+                frame,
+                t,
+                (text_x + 12, y + text_sizes[i][1]),
+                font,
+                fs,
+                color,
+                th,
+                cv2.LINE_AA,
+            )
+            y += text_sizes[i][1] + 6
+
+        # ✅ Removed face bounding box entirely
+
+        return frame
+
+    except Exception as e:
+        print("[draw_ai_label] error:", e)
+        return frame
+
+# ===================================================
+# Recognition Loop
+# ===================================================
 async def start_recognition_loop():
     global last_frame
     load_model()
@@ -154,36 +266,18 @@ async def start_recognition_loop():
 
             for face in faces:
                 emb = face.normed_embedding.astype(np.float32)
-
-                # Match order: BAD -> KNOWN -> UNKNOWN
-                bid, bad_dist = match_bad(emb)    # best bad match
-                uid, dist = match_known(emb)    # best known match
-
+                bid, bad_dist = match_bad(emb)
+                uid, dist = match_known(emb)
                 x1, y1, x2, y2 = face.bbox.astype(int)
-                label = "Unknown"
-                main_color = (0, 255, 255) # yellow for unknown
-                outline_color = (255, 255, 255)
 
-                # ---
-                # BAD PERSON DETECTED (use active_presence to avoid spam)
-                # ---
+                # BAD PERSON
                 if bid is not None and bad_dist <= THRESHOLD:
-                    # Get the reason/comment from bad_names
                     bad_info = bad_names.get(bid, {})
-                    name = bad_info.get('name', f'Suspect {bid[:4]}')
-                    reason = bad_info.get('reason', '')
-                    
-                    if reason:
-                        label = f"{name} - {reason}"
-                    else:
-                        label = f"{name}"
-                    
-                    main_color = (0, 0, 255) # red
-                    outline_color = (255, 255, 255)
-
+                    name = bad_info.get("name", f"Suspect {bid[:4]}")
+                    reason = bad_info.get("reason", "")
                     key = f"bad:{bid}"
+
                     if key not in active_presence:
-                        # first sighting -> save snapshot and send one alert
                         snapshot_path = save_bgr_image(frame_small)
                         await manager.broadcast_json({
                             "type": "alert_bad",
@@ -194,20 +288,16 @@ async def start_recognition_loop():
                             "first_seen": now.isoformat(),
                         })
                         print(f"[ALERT] Bad person detected: {name} - {reason}")
-
-                        # track presence (no DB event for bad by default, set event_id None)
                         active_presence[key] = {
                             "id": bid,
                             "event_id": None,
                             "entry_time": now,
                             "last_seen": now,
-                            "embedding": emb, # store embedding for robustness
+                            "embedding": emb,
                             "type": "bad",
                         }
                     else:
-                        # update last_seen only; do not re-alert or re-save snapshots
                         active_presence[key]["last_seen"] = now
-                        # optional broadcast update to show still present
                         await manager.broadcast_json({
                             "type": "alert_bad_update",
                             "bad_id": bid,
@@ -216,14 +306,13 @@ async def start_recognition_loop():
                             "last_seen": now.isoformat(),
                         })
                     processed_keys.add(key)
+                    frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "bad", name, reason)
 
-                # ---
-                # KNOWN PERSON DETECTED (existing behavior)
-                # ---
+                # KNOWN PERSON
                 elif uid is not None and dist <= THRESHOLD:
-                    label = user_names.get(uid, f"User {uid[:4]}")
-                    main_color = (0, 255, 0) # green
-                    outline_color = (255, 255, 255)
+                    # Get name and note from previously loaded maps
+                    name = user_names.get(uid, f"User {uid[:4]}")
+                    note = user_notes.get(uid, "")
 
                     key = f"known:{uid}"
                     if key not in active_presence:
@@ -245,7 +334,8 @@ async def start_recognition_loop():
                         await manager.broadcast_json({
                             "type": "known",
                             "user_id": uid,
-                            "name": label,
+                            "name": name,
+                            "note": note,              # include note in broadcast
                             "first_seen": now.isoformat(),
                             "snapshot": snapshot_path,
                         })
@@ -254,16 +344,16 @@ async def start_recognition_loop():
                         await manager.broadcast_json({
                             "type": "known",
                             "user_id": uid,
-                            "name": label,
+                            "name": name,
+                            "note": note,              # include note in update
                             "last_seen": now.isoformat(),
                         })
                     processed_keys.add(key)
+                    # Draw label using name + note from DB (note displayed as comment line)
+                    frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "known", name, note)
 
-                # ---
-                # UNKNOWN PERSON DETECTED (de-duplicate by embedding)
-                # ---
+                # UNKNOWN PERSON
                 else:
-                    # Attempt to match this unknown against currently tracked unknown presences
                     matched_unknown_key = None
                     matched_unknown_dist = float("inf")
                     for key, info in active_presence.items():
@@ -272,24 +362,20 @@ async def start_recognition_loop():
                         stored_emb = info.get("embedding")
                         if stored_emb is None:
                             continue
-                        # compute distance
                         d = float(np.linalg.norm(emb - stored_emb))
                         if d < matched_unknown_dist:
                             matched_unknown_dist = d
                             matched_unknown_key = key
 
                     if matched_unknown_key and matched_unknown_dist <= THRESHOLD:
-                        # treat as the same unknown person currently tracked
                         active_presence[matched_unknown_key]["last_seen"] = now
-                        # optional broadcast to update unknown presence
                         await manager.broadcast_json({
                             "type": "unknown",
-                            "unknown_id": active_presence[matched_unknown_key]["id"], 
+                            "unknown_id": active_presence[matched_unknown_key]["id"],
                             "last_seen": now.isoformat(),
                         })
                         processed_keys.add(matched_unknown_key)
                     else:
-                        # New unknown -> save snapshot + DB insert + track in active_presence
                         snapshot_path = save_bgr_image(frame_small)
                         unknown_doc = {
                             "image_path": snapshot_path,
@@ -306,7 +392,7 @@ async def start_recognition_loop():
                             "event_id": None,
                             "entry_time": now,
                             "last_seen": now,
-                            "embedding": emb,  # store embedding for later matching
+                            "embedding": emb,
                             "type": "unknown",
                         }
                         await manager.broadcast_json({
@@ -316,39 +402,14 @@ async def start_recognition_loop():
                             "first_seen": now.isoformat(),
                         })
                         processed_keys.add(key)
+                    frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "unknown")
 
-                # ---
-                # Draw labels
-                # ---
-                try:
-                    font = cv2.FONT_HERSHEY_SIMPLEX
-                    scale = 0.8
-                    thickness = 2
-                    (text_w, text_h), _ = cv2.getTextSize(label, font, scale, thickness)
-                    frame_h, frame_w = frame_small.shape[:2]
-                    text_x = int((x1 + x2) / 2 - text_w / 2)
-                    text_y = y1 - 40
-                    text_x = max(0, min(text_x, frame_w - text_w))
-                    if text_y - text_h < 0:
-                        text_y = text_h + 5
-                    cv2.putText(frame_small, label, (text_x, text_y),
-                        font, scale, outline_color, thickness + 2, cv2.LINE_AA)
-                    cv2.putText(frame_small, label, (text_x, text_y),
-                        font, scale, main_color, thickness, cv2.LINE_AA)
-                except Exception:
-                    # drawing should not break the loop
-                    pass
-
-            # ---
-            # Cleanup old presence events (people who left)
-            # ---
+            # Cleanup
             to_remove = []
             for key, info in list(active_presence.items()):
                 if (now - info["last_seen"]).total_seconds() > ABSENCE_TIMEOUT:
                     exit_time = info["last_seen"]
                     duration = (exit_time - info["entry_time"]).total_seconds()
-                    # If this presence corresponds to a presence_events DB doc (known users),
-                    # update that doc with exit_time and duration. For bad/unknown we used event_id None.
                     if info.get("event_id"):
                         await db.presence_events.update_one(
                             {"_id": info["event_id"]},
@@ -357,7 +418,6 @@ async def start_recognition_loop():
                                 "duration_seconds": duration
                             }}
                         )
-                    # notify clients that presence ended
                     await manager.broadcast_json({
                         "type": "presence_end",
                         "id": info["id"],
@@ -365,14 +425,13 @@ async def start_recognition_loop():
                         "exit_time": exit_time.isoformat(),
                         "presence_type": info.get("type"),
                     })
-                    to_remove.append(key)
+                    to_remove.append(key) 
 
             for k in to_remove:
                 active_presence.pop(k, None)
 
-            # update annotated frame for streaming
             last_frame = frame_small
-
             await asyncio.sleep(0.05)
+
     finally:
         cap.release()
