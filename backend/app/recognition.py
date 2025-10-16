@@ -129,93 +129,67 @@ def match_bad(emb: np.ndarray):
 # Beautiful Label Renderer
 # ===================================================
 def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
-    """
-    Draws a modern AI-style floating label:
-    - Glassy semi-transparent card
-    - Gradient tint background
-    - Rounded corners and subtle shadow
-    - No bounding box around face
-    """
     try:
         # --- Convert OpenCV -> PIL ---
         img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(img_pil, "RGBA")
 
         # --- Fonts ---
-        font_title = ImageFont.truetype("fonts/Roboto-Bold.ttf", 22)
-        font_note = ImageFont.truetype("fonts/Roboto-Regular.ttf", 17)
+        font_title = ImageFont.truetype("fonts/Roboto-Bold.ttf", 14)
+        font_note = ImageFont.truetype("fonts/Roboto-Italic.ttf", 10)
 
         # --- Label content & colors ---
         if person_type == "known":
-            grad_start, grad_end = (80, 255, 150, 150), (30, 150, 90, 150)
+            grad_start, grad_end = (80, 255, 150, 180), (30, 150, 90, 140)
             title_color, note_color = (20, 60, 20), (50, 50, 50)
             lines = [name or "Known Person"]
             if note:
                 lines.append(note)
+
         elif person_type == "bad":
-            grad_start, grad_end = (255, 70, 70, 170), (180, 0, 0, 170)
+            grad_start, grad_end = (255, 70, 70, 200), (180, 0, 0, 160)
             title_color, note_color = (255, 255, 255), (235, 235, 235)
             lines = [name or "Suspect"]
             if note:
                 lines.append(note)
+
         else:
-            grad_start, grad_end = (255, 170, 60, 170), (240, 110, 0, 170)
+            grad_start, grad_end = (255, 170, 60, 200), (240, 110, 0, 150)
             title_color, note_color = (255, 255, 255), (245, 245, 245)
             lines = ["Unknown"]
 
         # --- Measure text area ---
-        text_boxes = [draw.textbbox((0, 0), line, font=font_title if i == 0 else font_note)
-                      for i, line in enumerate(lines)]
+        text_boxes = [
+            draw.textbbox((0, 0), line, font=font_title if i == 0 else font_note)
+            for i, line in enumerate(lines)
+        ]
         width = max(w - x for x, y, w, h in text_boxes) + 28
         height = sum(h - y for x, y, w, h in text_boxes) + 24 + (len(lines) - 1) * 5
 
-        # --- Position above the face ---
+        # --- Position ---
         text_x = x1
-        text_y = max(0, y1 - height - 15)
-        radius = 14
+        text_y = max(0, y1 - height - 50)
+        radius = 10
 
-        # --- Create blurred background region (for glass effect) ---
-        glass = img_pil.crop((text_x, text_y, text_x + width, text_y + height))
-        glass = glass.filter(ImageFilter.GaussianBlur(10))
-
-        # --- Overlay gradient tint on blurred area ---
+        # --- Translucent gradient background ---
         gradient = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        grad_draw = ImageDraw.Draw(gradient)
         for y in range(height):
             r = int(grad_start[0] + (grad_end[0] - grad_start[0]) * (y / height))
             g = int(grad_start[1] + (grad_end[1] - grad_start[1]) * (y / height))
             b = int(grad_start[2] + (grad_end[2] - grad_start[2]) * (y / height))
             a = int(grad_start[3] + (grad_end[3] - grad_start[3]) * (y / height))
-            ImageDraw.Draw(gradient).line([(0, y), (width, y)], fill=(r, g, b, a), width=1)
+            grad_draw.line([(0, y), (width, y)], fill=(r, g, b, a))
 
-        # Merge glass blur + gradient
-        glass = Image.alpha_composite(glass.convert("RGBA"), gradient)
-
-        # --- Mask for rounded corners ---
+        # --- Rounded rectangle mask ---
         mask = Image.new("L", (width, height), 0)
         mask_draw = ImageDraw.Draw(mask)
         mask_draw.rounded_rectangle([(0, 0), (width, height)], radius=radius, fill=255)
 
-        # --- Shadow below the card ---
-        shadow = Image.new("RGBA", (width + 6, height + 6), (0, 0, 0, 0))
-        shadow_draw = ImageDraw.Draw(shadow)
-        shadow_draw.rounded_rectangle(
-            [(3, 3), (width + 3, height + 3)], radius=radius, fill=(0, 0, 0, 100)
-        )
-        shadow = shadow.filter(ImageFilter.GaussianBlur(4))
-        img_pil.paste(shadow, (text_x - 2, text_y - 2), shadow)
+        # --- Paste translucent gradient card ---
+        img_pil.paste(gradient, (text_x, text_y), mask)
 
-        # --- Paste the glass card onto main image ---
-        img_pil.paste(glass, (text_x, text_y), mask)
-
-        # --- Draw white border ---
-        draw.rounded_rectangle(
-            [(text_x, text_y), (text_x + width, text_y + height)],
-            radius=radius,
-            outline=(255, 255, 255, 90),
-            width=2,
-        )
-
-        # --- Draw text on top ---
+        # --- Draw text ---
         ty = text_y + 12
         for i, line in enumerate(lines):
             color = title_color if i == 0 else note_color
@@ -223,14 +197,20 @@ def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
             draw.text((text_x + 14, ty), line, font=font, fill=color)
             ty += (text_boxes[i][3] - text_boxes[i][1]) + 6
 
-        # --- Convert back to OpenCV ---
+        # --- Back to OpenCV ---
         frame = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
-
         return frame
 
     except Exception as e:
         print("[draw_ai_label] error:", e)
         return frame
+
+    
+    
+    
+    
+    
+    
 # ===================================================
 # Recognition Loop
 # ===================================================
