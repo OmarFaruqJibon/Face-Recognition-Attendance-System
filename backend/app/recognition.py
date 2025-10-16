@@ -130,9 +130,12 @@ def match_bad(emb: np.ndarray):
 # ===================================================
 def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
     try:
-        # --- Convert OpenCV -> PIL ---
-        img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-        draw = ImageDraw.Draw(img_pil, "RGBA")
+        from PIL import Image, ImageDraw, ImageFont
+        import numpy as np
+        import cv2
+
+        # --- Convert OpenCV -> PIL (RGBA to preserve transparency) ---
+        img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).convert("RGBA")
 
         # --- Fonts ---
         font_title = ImageFont.truetype("fonts/Roboto-Bold.ttf", 14)
@@ -140,25 +143,26 @@ def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
 
         # --- Label content & colors ---
         if person_type == "known":
-            grad_start, grad_end = (80, 255, 150, 180), (30, 150, 90, 140)
-            title_color, note_color = (20, 60, 20), (50, 50, 50)
+            grad_start, grad_end = (80, 255, 150, 130), (30, 150, 90, 100)
+            title_color, note_color = (20, 60, 20, 255), (50, 50, 50, 255)
             lines = [name or "Known Person"]
             if note:
                 lines.append(note)
 
         elif person_type == "bad":
-            grad_start, grad_end = (255, 70, 70, 200), (180, 0, 0, 160)
-            title_color, note_color = (255, 255, 255), (235, 235, 235)
+            grad_start, grad_end = (255, 70, 70, 140), (180, 0, 0, 100)
+            title_color, note_color = (255, 255, 255, 255), (235, 235, 235, 255)
             lines = [name or "Suspect"]
             if note:
                 lines.append(note)
 
         else:
-            grad_start, grad_end = (255, 170, 60, 200), (240, 110, 0, 150)
-            title_color, note_color = (255, 255, 255), (245, 245, 245)
+            grad_start, grad_end = (255, 170, 60, 130), (240, 110, 0, 100)
+            title_color, note_color = (255, 255, 255, 255), (245, 245, 245, 255)
             lines = ["Unknown"]
 
         # --- Measure text area ---
+        draw = ImageDraw.Draw(img_pil, "RGBA")
         text_boxes = [
             draw.textbbox((0, 0), line, font=font_title if i == 0 else font_note)
             for i, line in enumerate(lines)
@@ -169,9 +173,9 @@ def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
         # --- Position ---
         text_x = x1
         text_y = max(0, y1 - height - 50)
-        radius = 10
+        radius = 12
 
-        # --- Translucent gradient background ---
+        # --- Create translucent gradient label ---
         gradient = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         grad_draw = ImageDraw.Draw(gradient)
         for y in range(height):
@@ -186,10 +190,15 @@ def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
         mask_draw = ImageDraw.Draw(mask)
         mask_draw.rounded_rectangle([(0, 0), (width, height)], radius=radius, fill=255)
 
-        # --- Paste translucent gradient card ---
-        img_pil.paste(gradient, (text_x, text_y), mask)
+        # --- Masked gradient card ---
+        label_img = Image.new("RGBA", img_pil.size, (0, 0, 0, 0))
+        label_img.paste(gradient, (text_x, text_y), mask)
+
+        # ✅ Alpha blend (so background stays visible)
+        img_pil = Image.alpha_composite(img_pil, label_img)
 
         # --- Draw text ---
+        draw = ImageDraw.Draw(img_pil, "RGBA")
         ty = text_y + 12
         for i, line in enumerate(lines):
             color = title_color if i == 0 else note_color
@@ -198,7 +207,7 @@ def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
             ty += (text_boxes[i][3] - text_boxes[i][1]) + 6
 
         # --- Back to OpenCV ---
-        frame = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+        frame = cv2.cvtColor(np.array(img_pil.convert("RGB")), cv2.COLOR_RGB2BGR)
         return frame
 
     except Exception as e:
