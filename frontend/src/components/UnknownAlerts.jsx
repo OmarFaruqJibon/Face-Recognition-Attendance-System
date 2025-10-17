@@ -9,7 +9,7 @@ export default function UnknownAlerts({
 }) {
     const [showBadModal, setShowBadModal] = useState(false);
     const [showApproveModal, setShowApproveModal] = useState(false);
-    const [modalData, setModalData] = useState({ id: null, name: "", reason: "" });
+    const [modalData, setModalData] = useState({ id: null, name: "", reason: "", note: "" });
 
     // remove duplicate unknowns by _id
     const uniqueUnknowns = Array.from(
@@ -22,8 +22,8 @@ export default function UnknownAlerts({
         if (onIgnore) await onIgnore(unknownId);
     }
 
-    async function handleApprove(unknownId, name) {
-        if (onApprove) await onApprove(unknownId, name);
+    async function handleApprove(unknownId, name, note) {
+        if (onApprove) await onApprove(unknownId, name, note);
     }
 
     async function handleMarkAsBad(unknownId, name, reason) {
@@ -31,7 +31,7 @@ export default function UnknownAlerts({
     }
 
     const openApproveModal = (unknownId) => {
-        setModalData({ id: unknownId, name: "", reason: "" });
+        setModalData({ id: unknownId, name: "", note: "" });
         setShowApproveModal(true);
     };
 
@@ -43,7 +43,7 @@ export default function UnknownAlerts({
     const closeModals = () => {
         setShowApproveModal(false);
         setShowBadModal(false);
-        setModalData({ id: null, name: "", reason: "" });
+        setModalData({ id: null, name: "", reason: "", note: "" });
     };
 
     const submitApprove = async () => {
@@ -51,8 +51,9 @@ export default function UnknownAlerts({
             alert("Please enter a name");
             return;
         }
-        await handleApprove(modalData.id, modalData.name);
+        await handleApprove(modalData.id, modalData.name, modalData.note);
         closeModals();
+        console.log(modalData.id, modalData.name, modalData.note)
     };
 
     const submitBad = async () => {
@@ -173,6 +174,22 @@ export default function UnknownAlerts({
                                     }))
                                 }
                             />
+                        </label>
+
+                        <label className="block text-sm font-medium text-gray-700 mb-4">
+                            Note
+                            <textarea
+                                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none"
+                                
+                                placeholder="Enter note"
+                                value={modalData.note}
+                                onChange={(e) =>
+                                    setModalData((prev) => ({
+                                        ...prev,
+                                        note: e.target.value,
+                                    }))
+                                }
+                            ></textarea>
                         </label>
 
                         <div className="flex justify-end gap-3 mt-6">

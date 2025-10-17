@@ -129,9 +129,9 @@ export default function Dashboard() {
   }
 
   // ✅ Approve unknown
-  async function handleApproveUnknown(unknownId, name) {
+  async function handleApproveUnknown(unknownId, name, note) {
     try {
-      await approveUnknown(unknownId, name);
+      await approveUnknown(unknownId, name, note);
       await refreshUnknowns();
       const u = await fetchUsers();
       setUsers(u);

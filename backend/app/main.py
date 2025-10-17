@@ -39,6 +39,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 class ApproveBody(BaseModel):
     name: str
+    note: str = ""
 
 class BadPersonBody(BaseModel):
     name: str
@@ -163,6 +164,7 @@ async def approve_unknown(unknown_id: str, body: ApproveBody):
         raise HTTPException(status_code=404, detail="unknown not found")
     user_doc = {
         "name": body.name,
+        "note": body.note,
         "image_path": unk.get("image_path"),
         "embedding": unk.get("embedding"),
         "first_seen": unk.get("first_seen"),

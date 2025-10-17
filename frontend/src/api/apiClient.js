@@ -30,9 +30,10 @@ export async function fetchPresence(limit = 100) {
   return res.data;
 }
 
-export async function approveUnknown(unknownId, name) {
+export async function approveUnknown(unknownId, name, note) {
   const res = await client.post(`/admin/approve_unknown/${unknownId}`, {
     name,
+    note
   });
   return res.data;
 }
