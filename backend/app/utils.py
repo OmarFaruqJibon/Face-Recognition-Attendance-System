@@ -14,13 +14,23 @@ SNAPSHOT_DIR = os.path.join(STATIC_DIR, "snapshots")
 
 os.makedirs(SNAPSHOT_DIR, exist_ok=True)
 
-def save_bgr_image(bgr_img) -> str:
-    """Save BGR (OpenCV) image to static/snapshots and return web path."""
+# def save_bgr_image(bgr_img) -> str:
+#     """Save BGR (OpenCV) image to static/snapshots and return web path."""
+#     filename = f"{uuid.uuid4().hex}.jpg"
+#     path = os.path.join(SNAPSHOT_DIR, filename)
+#     rgb = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
+#     Image.fromarray(rgb).save(path, format="JPEG", quality=85)
+#     return f"/static/snapshots/{filename}"
+
+
+def save_bgr_image(bgr_img):
+    """Save BGR (OpenCV) image and return both local and web paths."""
     filename = f"{uuid.uuid4().hex}.jpg"
-    path = os.path.join(SNAPSHOT_DIR, filename)
+    abs_path = os.path.join(SNAPSHOT_DIR, filename)
     rgb = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
-    Image.fromarray(rgb).save(path, format="JPEG", quality=85)
-    return f"/static/snapshots/{filename}"
+    Image.fromarray(rgb).save(abs_path, format="JPEG", quality=85)
+    web_path = f"/static/snapshots/{filename}"
+    return abs_path, web_path
 
 def serialize_doc(value):
     """Recursively convert MongoDB docs into JSON-safe values."""

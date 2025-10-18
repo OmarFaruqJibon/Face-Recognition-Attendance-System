@@ -8,6 +8,8 @@ import cv2
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from app.email_utils import send_alert_email
+from app.whatsapp_utils import send_whatsapp_message
 
 from app.db import db
 from app.ws_manager import manager
@@ -27,7 +29,7 @@ bad_embeddings: dict = {}  # bad_id -> np.array
 bad_names: dict = {}  # bad_id -> {name, reason}
 active_presence: dict = {}  # key -> presence info
 last_frame = None  # global annotated frame for streaming
-
+ALERT_TO = os.getenv("WHATSAPP_ALERT_TO")
 
 # ===================================================
 # Model Loading
@@ -130,10 +132,6 @@ def match_bad(emb: np.ndarray):
 # ===================================================
 def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
     try:
-        from PIL import Image, ImageDraw, ImageFont
-        import numpy as np
-        import cv2
-
         # --- Convert OpenCV -> PIL (RGBA to preserve transparency) ---
         img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).convert("RGBA")
 
@@ -213,12 +211,6 @@ def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
     except Exception as e:
         print("[draw_ai_label] error:", e)
         return frame
-
-    
-    
-    
-    
-    
     
 # ===================================================
 # Recognition Loop
@@ -265,18 +257,44 @@ async def start_recognition_loop():
                     name = bad_info.get("name", f"Suspect {bid[:4]}")
                     reason = bad_info.get("reason", "")
                     key = f"bad:{bid}"
+                    
+                    frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "bad", name, reason)
 
                     if key not in active_presence:
-                        snapshot_path = save_bgr_image(frame_small)
+                        abs_path, web_path = save_bgr_image(frame_small)
                         await manager.broadcast_json({
                             "type": "alert_bad",
                             "bad_id": bid,
                             "name": name,
                             "reason": reason,
-                            "snapshot": snapshot_path,
+                            "snapshot": web_path,
                             "first_seen": now.isoformat(),
                         })
                         print(f"[ALERT] Bad person detected: {name} - {reason}")
+                        
+                        
+                       # ✅ Send WhatsApp alert
+                        # if ALERT_TO:
+                        #     send_whatsapp_message(
+                        #         ALERT_TO,
+                        #         f" *Bad Person Detected!*\n"
+                        #         f" Name: {name}\n"
+                        #         f" Reason: {reason or 'N/A'}\n"
+                        #         f" Time: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                        #     )
+                        
+                        
+                        # ✅ Send Email Alert
+                        try:
+                            send_alert_email(
+                                subject=f"🚨 ALERT: Bad Person Detected - {name}",
+                                body=f"Name: {name}\nReason: {reason}\nID: {bid}\nTime: {now}",
+                                image_path=abs_path,
+                            )
+                        except Exception as e:
+                            print(e)
+                        
+                        
                         active_presence[key] = {
                             "id": bid,
                             "event_id": None,
@@ -295,7 +313,7 @@ async def start_recognition_loop():
                             "last_seen": now.isoformat(),
                         })
                     processed_keys.add(key)
-                    frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "bad", name, reason)
+                    # frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "bad", name, reason)
 
                 # KNOWN PERSON
                 elif uid is not None and dist <= THRESHOLD:
@@ -305,12 +323,12 @@ async def start_recognition_loop():
 
                     key = f"known:{uid}"
                     if key not in active_presence:
-                        snapshot_path = save_bgr_image(frame_small)
+                        abs_path, web_path = save_bgr_image(frame_small)
                         ev = {
                             "user_id": ObjectId(uid),
                             "entry_time": now,
                             "exit_time": None,
-                            "snapshot_path": snapshot_path,
+                            "snapshot_path": web_path,
                         }
                         res = await db.presence_events.insert_one(ev)
                         active_presence[key] = {
@@ -326,7 +344,7 @@ async def start_recognition_loop():
                             "name": name,
                             "note": note,              # include note in broadcast
                             "first_seen": now.isoformat(),
-                            "snapshot": snapshot_path,
+                            "snapshot": web_path,
                         })
                     else:
                         active_presence[key]["last_seen"] = now
@@ -365,9 +383,10 @@ async def start_recognition_loop():
                         })
                         processed_keys.add(matched_unknown_key)
                     else:
-                        snapshot_path = save_bgr_image(frame_small)
+                        frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "unknown")
+                        abs_path, web_path = save_bgr_image(frame_small)
                         unknown_doc = {
-                            "image_path": snapshot_path,
+                            "image_path": web_path,
                             "embedding": emb.tolist(),
                             "first_seen": now,
                             "last_seen": now,
@@ -387,11 +406,22 @@ async def start_recognition_loop():
                         await manager.broadcast_json({
                             "type": "unknown",
                             "unknown_id": unknown_id,
-                            "image_path": snapshot_path,
+                            "image_path": web_path,
                             "first_seen": now.isoformat(),
                         })
                         processed_keys.add(key)
-                    frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "unknown")
+                        
+                        # ✅ Send Email Notification
+                        try:
+                            send_alert_email(
+                                subject="🚨 ALERT: Unknown Person Detected",
+                                body=f"An unknown person was detected at {now}\nID: {unknown_id}",
+                                image_path=abs_path,
+                            )
+                        except Exception as e:
+                            print(e)
+                            
+                    # frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "unknown")
 
             # Cleanup
             to_remove = []
