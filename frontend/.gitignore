@@ -36,3 +36,5 @@ __pycache__
 /snapshots
 snapshots
 snapshots/
+
+.env

@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from app.email_utils import send_alert_email
 from app.whatsapp_utils import send_whatsapp_message
+from app.telegram_utils import send_telegram_message, send_telegram_photo
+
 
 from app.db import db
 from app.ws_manager import manager
@@ -294,6 +296,21 @@ async def start_recognition_loop():
                         except Exception as e:
                             print(e)
                         
+                        try:
+                            send_telegram_photo(
+                                abs_path,
+                                caption=(
+                                    f"🚨 *Bad Person Detected!*\n"
+                                    f"👤 Name: {name}\n"
+                                    f"⚠️ Reason: {reason or 'N/A'}\n"
+                                    f"⚠️ ID: {bid or 'N/A'}\n"
+                                    f"🕒 Time: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                                ),
+                            )
+                            print(f"[TELEGRAM] Alert sent")
+                        except Exception as e:
+                            print("[Telegram] Alert sent failed", e)
+                        
                         
                         active_presence[key] = {
                             "id": bid,
@@ -412,14 +429,14 @@ async def start_recognition_loop():
                         processed_keys.add(key)
                         
                         # ✅ Send Email Notification
-                        try:
-                            send_alert_email(
-                                subject="🚨 ALERT: Unknown Person Detected",
-                                body=f"An unknown person was detected at {now}\nID: {unknown_id}",
-                                image_path=abs_path,
-                            )
-                        except Exception as e:
-                            print(e)
+                        # try:
+                        #     send_alert_email(
+                        #         subject="🚨 ALERT: Unknown Person Detected",
+                        #         body=f"An unknown person was detected at {now}\nID: {unknown_id}",
+                        #         image_path=abs_path,
+                        #     )
+                        # except Exception as e:
+                        #     print(e)
                             
                     # frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "unknown")
 
