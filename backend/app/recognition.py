@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from app.email_utils import send_alert_email
 from app.whatsapp_utils import send_whatsapp_message
 from app.telegram_utils import send_telegram_message, send_telegram_photo
-
+from app.signalwire import send_signalwire_call
 
 from app.db import db
 from app.ws_manager import manager
@@ -294,13 +294,14 @@ async def start_recognition_loop():
                                 image_path=abs_path,
                             )
                         except Exception as e:
-                            print(e)
-                        
+                            print("[Email] Alert sent failed", e)
+                            
+                        # ✅ Send Telegram Alert
                         try:
                             send_telegram_photo(
                                 abs_path,
                                 caption=(
-                                    f"🚨 *Bad Person Detected!*\n"
+                                    f"🚨 Bad Person Detected!\n"
                                     f"👤 Name: {name}\n"
                                     f"⚠️ Reason: {reason or 'N/A'}\n"
                                     f"⚠️ ID: {bid or 'N/A'}\n"
@@ -310,6 +311,12 @@ async def start_recognition_loop():
                             print(f"[TELEGRAM] Alert sent")
                         except Exception as e:
                             print("[Telegram] Alert sent failed", e)
+                            
+                        
+                        
+                        # Send SignalWire call alert
+                        send_signalwire_call()
+
                         
                         
                         active_presence[key] = {
