@@ -11,6 +11,8 @@ from fastapi.responses import StreamingResponse
 from fastapi import status
 from fastapi import Body
 from fastapi import File, UploadFile, Form
+import pytz
+
 
 from app.db import db
 from app.ws_manager import manager
@@ -35,7 +37,7 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 os.makedirs(os.path.join(STATIC_DIR, "snapshots"), exist_ok=True)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
+DHAKA_TZ = pytz.timezone("Asia/Dhaka")
 
 class ApproveBody(BaseModel):
     name: str
@@ -111,7 +113,7 @@ async def create_user(
     embedding = None
 
     if image:
-        image_name = f"{datetime.datetime.utcnow().timestamp()}_{image.filename}"
+        image_name = f"{datetime.datetime.now(DHAKA_TZ).replace(tzinfo=None).timestamp()}_{image.filename}"
         save_path = os.path.join(STATIC_DIR, "snapshots", image_name)
         with open(save_path, "wb") as f:
             f.write(await image.read())
@@ -130,7 +132,8 @@ async def create_user(
         "note": note,
         "image_path": image_path,
         "embedding": embedding,
-        "created_at": datetime.datetime.utcnow(),
+        # "created_at": datetime.datetime.utcnow(),
+        "created_at": datetime.datetime.now(DHAKA_TZ).replace(tzinfo=None),
     }
 
     res = await db.users.insert_one(doc)
@@ -169,7 +172,7 @@ async def approve_unknown(unknown_id: str, body: ApproveBody):
         "embedding": unk.get("embedding"),
         "first_seen": unk.get("first_seen"),
         "last_seen": unk.get("last_seen"),
-        "created_at": datetime.datetime.utcnow(),
+        "created_at": datetime.datetime.now(DHAKA_TZ).replace(tzinfo=None),
     }
     res = await db.users.insert_one(user_doc)
     await db.unknowns.delete_one({"_id": ObjectId(unknown_id)})
@@ -209,7 +212,7 @@ async def mark_bad_person(unknown_id: str, body: BadPersonBody):
         "embedding": unk.get("embedding"),
         "first_seen": unk.get("first_seen"),
         "last_seen": unk.get("last_seen"),
-        "created_at": datetime.datetime.utcnow(),
+        "created_at": datetime.datetime.now(DHAKA_TZ).replace(tzinfo=None),
     }
     res = await db.bad_people.insert_one(bad_person_doc)
     await db.unknowns.delete_one({"_id": ObjectId(unknown_id)})
@@ -294,7 +297,7 @@ async def create_bad_person(
 
     if image:
         # Save uploaded image
-        image_name = f"{datetime.datetime.utcnow().timestamp()}_{image.filename}"
+        image_name = f"{datetime.datetime.now(DHAKA_TZ).replace(tzinfo=None).timestamp()}_{image.filename}"
         save_path = os.path.join(STATIC_DIR, "snapshots", image_name)
         with open(save_path, "wb") as f:
             f.write(await image.read())
@@ -317,7 +320,7 @@ async def create_bad_person(
         "reason": reason,
         "image_path": image_path,
         "embedding": embedding,
-        "created_at": datetime.datetime.utcnow(),
+        "created_at": datetime.datetime.now(DHAKA_TZ).replace(tzinfo=None),
     }
 
     res = await db.bad_people.insert_one(doc)

@@ -3,6 +3,11 @@
 import React, { useEffect, useState } from "react";
 import { fetchPresence } from "../api/apiClient";
 import dayjs from "dayjs";
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export default function PresenceList() {
   const [events, setEvents] = useState([]);
@@ -20,7 +25,8 @@ export default function PresenceList() {
                 {e.user_id ? `User ${e.user_id}` : "Unknown"}
               </div>
               <div className="text-xs text-gray-500">
-                Entry: {dayjs(e.entry_time).format("YYYY-MM-DD HH:mm:ss")}
+                {/* Entry: {dayjs(e.entry_time).format("YYYY-MM-DD HH:mm:ss")} */}
+                Entry: {dayjs.utc(e.entry_time).format("YYYY-MM-DD HH:mm:ss")}
               </div>
             </div>
             <div className="text-sm">

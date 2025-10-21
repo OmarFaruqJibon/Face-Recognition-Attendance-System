@@ -4,6 +4,7 @@ import os
 import asyncio
 import datetime
 import numpy as np
+import pytz
 import cv2
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
@@ -11,7 +12,6 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from app.email_utils import send_alert_email
 from app.whatsapp_utils import send_whatsapp_message
 from app.telegram_utils import send_telegram_message, send_telegram_photo
-from app.signalwire import send_signalwire_call
 
 from app.db import db
 from app.ws_manager import manager
@@ -32,6 +32,7 @@ bad_names: dict = {}  # bad_id -> {name, reason}
 active_presence: dict = {}  # key -> presence info
 last_frame = None  # global annotated frame for streaming
 ALERT_TO = os.getenv("WHATSAPP_ALERT_TO")
+DHAKA_TZ = pytz.timezone("Asia/Dhaka")
 
 # ===================================================
 # Model Loading
@@ -244,7 +245,7 @@ async def start_recognition_loop():
             except Exception as ex:
                 print("[recognition] inference error:", ex)
                 faces = []
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(DHAKA_TZ).replace(tzinfo=None)
             processed_keys = set()
 
             for face in faces:
@@ -290,7 +291,7 @@ async def start_recognition_loop():
                         try:
                             send_alert_email(
                                 subject=f"🚨 ALERT: Bad Person Detected - {name}",
-                                body=f"Name: {name}\nReason: {reason}\nID: {bid}\nTime: {now}",
+                                body=f"Name: {name}\nReason: {reason}\nID: {bid}\nTime: {now.strftime('%Y-%m-%d %I:%M:%S %p %Z')}",
                                 image_path=abs_path,
                             )
                         except Exception as e:
@@ -305,18 +306,13 @@ async def start_recognition_loop():
                                     f"👤 Name: {name}\n"
                                     f"⚠️ Reason: {reason or 'N/A'}\n"
                                     f"⚠️ ID: {bid or 'N/A'}\n"
-                                    f"🕒 Time: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                                    f"🕒 Time: {now.strftime('%Y-%m-%d %I:%M:%S %p %Z')}"
                                 ),
                             )
                             print(f"[TELEGRAM] Alert sent")
                         except Exception as e:
                             print("[Telegram] Alert sent failed", e)
-                            
                         
-                        
-                        # Send SignalWire call alert
-                        send_signalwire_call()
-
                         
                         
                         active_presence[key] = {

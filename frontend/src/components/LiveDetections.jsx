@@ -1,9 +1,13 @@
 // src/components/LiveDetections.jsx
 import React from "react";
 import dayjs from "dayjs";
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export default function LiveDetections({ liveMap = {}, users = [] }) {
-  const BANGLADESH_OFFSET = 6 * 60 * 60 * 1000;
 
   // keep only known users, then sort by last_seen
   const items = Object.values(liveMap)
@@ -32,9 +36,8 @@ export default function LiveDetections({ liveMap = {}, users = [] }) {
         )}
         {items.map((it) => {
           const name = userMap[it.id]?.name || `User ${it.id.slice(-4)}`;
-          const lastSeen = dayjs(it.last_seen + BANGLADESH_OFFSET).format(
-            "HH:mm:ss"
-          );
+          const lastSeen = dayjs.utc(it.last_seen).format("YYYY-MM-DD HH:mm:ss");
+
           const duration = Math.floor(
             (new Date(it.last_seen).getTime() -
               new Date(it.entry_time).getTime()) /
