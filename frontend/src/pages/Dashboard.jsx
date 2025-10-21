@@ -19,6 +19,7 @@ import PresenceList from "../components/PresenceList";
 import dayjs from "dayjs";
 import timezone from "dayjs/plugin/timezone";
 import BadPeopleManagement from "../components/BadPeopleManagement";
+import RestrictedHours from "../components/RestrictedHours";
 
 const WS_URL =
   (import.meta.env.VITE_WS_BASE || "ws://localhost:8000") + "/ws/stream";
@@ -222,6 +223,8 @@ export default function Dashboard() {
           badPeople={badPeople}
           onBadPeopleChanged={setBadPeople}
         />
+
+        <RestrictedHours/>
 
         {/* Optional Admin Panel */}
         {/* 

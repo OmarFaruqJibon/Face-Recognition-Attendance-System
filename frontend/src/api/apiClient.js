@@ -103,4 +103,18 @@ export async function updateBadPerson(userId, data) {
 
 // ---------------------BAD PEOPLE SECTION -------------------
 
+
+// Get restricted settings
+export async function getRestrictedSettings() {
+  const res = await client.get(`/restrictedhours`);
+  return res.data;
+}
+
+// Update restricted settings
+export async function updateRestrictedSettings(data) {
+  const res = await client.put(`/restrictedhours`, data);
+  return res.data;
+}
+
+
 export default client;

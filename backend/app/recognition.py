@@ -8,11 +8,9 @@ import pytz
 import cv2
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont
 from app.email_utils import send_alert_email
-from app.whatsapp_utils import send_whatsapp_message
-from app.telegram_utils import send_telegram_message, send_telegram_photo
-
+from app.telegram_utils import send_telegram_photo
 from app.db import db
 from app.ws_manager import manager
 from app.utils import save_bgr_image
@@ -23,15 +21,16 @@ INSIGHTFACE_CTX_ID = int(os.getenv("INSIGHTFACE_CTX_ID", "-1"))
 THRESHOLD = float(os.getenv("THRESHOLD", "1.2"))
 RESIZE_WIDTH = int(os.getenv("RESIZE_WIDTH", "480"))
 ABSENCE_TIMEOUT = int(os.getenv("ABSENCE_TIMEOUT", "5"))
+RESTRICTED_HOURS_START = "17:30"
+RESTRICTED_HOURS_END = "17:35" 
 model = None
 known_embeddings: dict = {}  # user_id -> np.array
-user_names: dict = {}  # user_id -> name
-user_notes: dict = {}  # user_id -> note (new)
-bad_embeddings: dict = {}  # bad_id -> np.array
-bad_names: dict = {}  # bad_id -> {name, reason}
-active_presence: dict = {}  # key -> presence info
-last_frame = None  # global annotated frame for streaming
-ALERT_TO = os.getenv("WHATSAPP_ALERT_TO")
+user_names: dict = {}        # user_id -> name
+user_notes: dict = {}        # user_id -> note
+bad_embeddings: dict = {}    # bad_id -> np.array
+bad_names: dict = {}         # bad_id -> {name, reason}
+active_presence: dict = {}   # key -> presence info
+last_frame = None            # global annotated frame for streaming
 DHAKA_TZ = pytz.timezone("Asia/Dhaka")
 
 # ===================================================
@@ -69,7 +68,6 @@ def get_face_embedding_from_image(img_path: str):
 # Embeddings Loading
 # ===================================================
 async def reload_known_embeddings():
-    """Reload embeddings for known users and store name + note."""
     global known_embeddings, user_names, user_notes
     known_embeddings = {}
     user_names = {}
@@ -81,11 +79,9 @@ async def reload_known_embeddings():
             try:
                 known_embeddings[uid] = np.array(u["embedding"], dtype=np.float32)
             except Exception:
-                # defensive: skip if embedding malformed
                 continue
-            # store name and note (note may be missing)
             user_names[uid] = u.get("name", f"User {uid[:4]}")
-            user_notes[uid] = u.get("note", "")  # <-- uses note field from DB
+            user_notes[uid] = u.get("note", "")
     print(f"[recognition] loaded {len(known_embeddings)} known embeddings")
 
 
@@ -131,38 +127,119 @@ def match_bad(emb: np.ndarray):
 
 
 # ===================================================
+# Restricted Hours Check (Dynamic from DB)
+# ===================================================
+_cached_restricted_hours = None
+_last_restricted_fetch = None
+
+async def get_restricted_hours_settings():
+    """Fetch restricted hours from DB with 10s cache."""
+    global _cached_restricted_hours, _last_restricted_fetch
+    now = datetime.datetime.now()
+
+    # Use cached copy for 10 seconds to avoid frequent DB calls
+    if (
+        _cached_restricted_hours is not None
+        and _last_restricted_fetch
+        and (now - _last_restricted_fetch).total_seconds() < 10
+    ):
+        return _cached_restricted_hours
+
+    settings = await db.restricted_hours.find_one({"type": "restricted_hours"})
+    if not settings:
+        settings = {"enabled": False, "start_time": "22:00", "end_time": "06:00"}
+
+    _cached_restricted_hours = {
+        "enabled": settings.get("enabled", False),
+        "start_time": settings.get("start_time", "22:00"),
+        "end_time": settings.get("end_time", "06:00"),
+    }
+    _last_restricted_fetch = now
+    return _cached_restricted_hours
+
+
+async def is_restricted_time():
+    """Check if current time is within restricted hours (uses DB settings)."""
+    settings = await get_restricted_hours_settings()
+    if not settings["enabled"]:
+        return False
+
+    now = datetime.datetime.now(DHAKA_TZ).time()
+    start = datetime.datetime.strptime(settings["start_time"], "%H:%M").time()
+    end = datetime.datetime.strptime(settings["end_time"], "%H:%M").time()
+
+    # Handle overnight periods like 22:00 -> 06:00
+    if start < end:
+        return start <= now <= end
+    else:
+        return now >= start or now <= end
+
+
+
+# ===================================================
+# Alert Helper for Restricted Hours
+# ===================================================
+async def send_restricted_alert(person_type, name, id, reason_or_note, frame):
+    """Send email & telegram alert during restricted hours for unknown/bad people."""
+    now = datetime.datetime.now(DHAKA_TZ).replace(tzinfo=None)
+    abs_path, web_path = save_bgr_image(frame)
+    try:
+        send_alert_email(
+            subject=f"🚨 ALERT: Restricted Hours {person_type.title()} Detected",
+            body=(
+                f"Type: {person_type}\n"
+                f"Name: {name}\n"
+                f"ID: {id}\n"
+                f"Reason/Note: {reason_or_note or 'N/A'}\n"
+                f"Time: {now.strftime('%Y-%m-%d %I:%M:%S %p %Z')}"
+                
+            ),
+            image_path=abs_path,
+        )
+    except Exception as e:
+        print(f"[Email] Restricted alert failed for {person_type}: {e}")
+    try:
+        send_telegram_photo(
+            abs_path,
+            caption=(
+                f"🚨 Restricted Hours Alert!\n"
+                f"Type: {person_type}\n"
+                f"Name: {name}\n"
+                f"ID: {id}\n"
+                f"Reason/Note: {reason_or_note or 'N/A'}\n"
+                f"Time: {now.strftime('%Y-%m-%d %I:%M:%S %p %Z')}"
+            ),
+        )
+    except Exception as e:
+        print(f"[Telegram] Restricted alert failed for {person_type}: {e}")
+
+
+# ===================================================
 # Beautiful Label Renderer
 # ===================================================
 def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
     try:
-        # --- Convert OpenCV -> PIL (RGBA to preserve transparency) ---
         img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).convert("RGBA")
-
-        # --- Fonts ---
         font_title = ImageFont.truetype("fonts/Roboto-Bold.ttf", 14)
         font_note = ImageFont.truetype("fonts/Roboto-Italic.ttf", 10)
 
-        # --- Label content & colors ---
         if person_type == "known":
             grad_start, grad_end = (80, 255, 150, 130), (30, 150, 90, 100)
             title_color, note_color = (20, 60, 20, 255), (50, 50, 50, 255)
             lines = [name or "Known Person"]
             if note:
                 lines.append(note)
-
         elif person_type == "bad":
             grad_start, grad_end = (255, 70, 70, 140), (180, 0, 0, 100)
             title_color, note_color = (255, 255, 255, 255), (235, 235, 235, 255)
             lines = [name or "Suspect"]
             if note:
                 lines.append(note)
-
         else:
             grad_start, grad_end = (255, 170, 60, 130), (240, 110, 0, 100)
             title_color, note_color = (255, 255, 255, 255), (245, 245, 245, 255)
             lines = ["Unknown"]
 
-        # --- Measure text area ---
         draw = ImageDraw.Draw(img_pil, "RGBA")
         text_boxes = [
             draw.textbbox((0, 0), line, font=font_title if i == 0 else font_note)
@@ -171,12 +248,10 @@ def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
         width = max(w - x for x, y, w, h in text_boxes) + 28
         height = sum(h - y for x, y, w, h in text_boxes) + 24 + (len(lines) - 1) * 5
 
-        # --- Position ---
         text_x = x1
         text_y = max(0, y1 - height - 50)
         radius = 12
 
-        # --- Create translucent gradient label ---
         gradient = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         grad_draw = ImageDraw.Draw(gradient)
         for y in range(height):
@@ -186,19 +261,14 @@ def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
             a = int(grad_start[3] + (grad_end[3] - grad_start[3]) * (y / height))
             grad_draw.line([(0, y), (width, y)], fill=(r, g, b, a))
 
-        # --- Rounded rectangle mask ---
         mask = Image.new("L", (width, height), 0)
         mask_draw = ImageDraw.Draw(mask)
         mask_draw.rounded_rectangle([(0, 0), (width, height)], radius=radius, fill=255)
 
-        # --- Masked gradient card ---
         label_img = Image.new("RGBA", img_pil.size, (0, 0, 0, 0))
         label_img.paste(gradient, (text_x, text_y), mask)
-
-        # ✅ Alpha blend (so background stays visible)
         img_pil = Image.alpha_composite(img_pil, label_img)
 
-        # --- Draw text ---
         draw = ImageDraw.Draw(img_pil, "RGBA")
         ty = text_y + 12
         for i, line in enumerate(lines):
@@ -207,14 +277,52 @@ def draw_ai_label(frame, x1, y1, x2, y2, person_type, name=None, note=None):
             draw.text((text_x + 14, ty), line, font=font, fill=color)
             ty += (text_boxes[i][3] - text_boxes[i][1]) + 6
 
-        # --- Back to OpenCV ---
         frame = cv2.cvtColor(np.array(img_pil.convert("RGB")), cv2.COLOR_RGB2BGR)
         return frame
 
     except Exception as e:
         print("[draw_ai_label] error:", e)
         return frame
-    
+
+
+
+def draw_restricted_hour_banner(frame):
+    """Draws a red transparent banner 'RESTRICTED HOUR' on top of frame."""
+    try:
+        img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).convert("RGBA")
+        draw = ImageDraw.Draw(img_pil, "RGBA")
+        w, h = img_pil.size
+
+        # Banner height and background (semi-transparent red)
+        banner_height = 40
+        banner_color = (255, 0, 0, 140)
+        draw.rectangle([(0, 0), (w, banner_height)], fill=banner_color)
+
+        # Text
+        font = ImageFont.truetype("fonts/Roboto-Bold.ttf", 24)
+        text = "RESTRICTED HOUR ACTIVE"
+
+        # --- Pillow 10+ compatible text measurement ---
+        bbox = font.getbbox(text)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+
+        draw.text(
+            ((w - text_w) / 2, (banner_height - text_h) / 2),
+            text,
+            font=font,
+            fill=(255, 255, 255, 255),
+        )
+
+        # Convert back to OpenCV format
+        return cv2.cvtColor(np.array(img_pil.convert("RGB")), cv2.COLOR_RGB2BGR)
+
+    except Exception as e:
+        print("[draw_restricted_hour_banner] error:", e)
+        return frame
+
+
+
 # ===================================================
 # Recognition Loop
 # ===================================================
@@ -245,6 +353,7 @@ async def start_recognition_loop():
             except Exception as ex:
                 print("[recognition] inference error:", ex)
                 faces = []
+
             now = datetime.datetime.now(DHAKA_TZ).replace(tzinfo=None)
             processed_keys = set()
 
@@ -254,13 +363,14 @@ async def start_recognition_loop():
                 uid, dist = match_known(emb)
                 x1, y1, x2, y2 = face.bbox.astype(int)
 
+                # ==========================================================
                 # BAD PERSON
+                # ==========================================================
                 if bid is not None and bad_dist <= THRESHOLD:
                     bad_info = bad_names.get(bid, {})
                     name = bad_info.get("name", f"Suspect {bid[:4]}")
                     reason = bad_info.get("reason", "")
                     key = f"bad:{bid}"
-                    
                     frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "bad", name, reason)
 
                     if key not in active_presence:
@@ -274,30 +384,23 @@ async def start_recognition_loop():
                             "first_seen": now.isoformat(),
                         })
                         print(f"[ALERT] Bad person detected: {name} - {reason}")
+
+                        # ✅ Restricted hours alert (only once per detection)
+                        restricted_sent = False
+                        if await is_restricted_time():
+                            await send_restricted_alert("Bad", name, bid, reason, frame_small)
+                            restricted_sent = True
                         
-                        
-                       # ✅ Send WhatsApp alert
-                        # if ALERT_TO:
-                        #     send_whatsapp_message(
-                        #         ALERT_TO,
-                        #         f" *Bad Person Detected!*\n"
-                        #         f" Name: {name}\n"
-                        #         f" Reason: {reason or 'N/A'}\n"
-                        #         f" Time: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}"
-                        #     )
-                        
-                        
-                        # ✅ Send Email Alert
+                        # ✅ Regular alert
                         try:
                             send_alert_email(
                                 subject=f"🚨 ALERT: Bad Person Detected - {name}",
-                                body=f"Name: {name}\nReason: {reason}\nID: {bid}\nTime: {now.strftime('%Y-%m-%d %I:%M:%S %p %Z')}",
+                                body=f"Name: {name}\nReason: {reason}\nID: {bid}\nTime: {now.strftime('%Y-%m-%d %I:%M:%S %p')}",
                                 image_path=abs_path,
                             )
                         except Exception as e:
-                            print("[Email] Alert sent failed", e)
+                            print("[Email] Alert send failed", e)
                             
-                        # ✅ Send Telegram Alert
                         try:
                             send_telegram_photo(
                                 abs_path,
@@ -305,16 +408,14 @@ async def start_recognition_loop():
                                     f"🚨 Bad Person Detected!\n"
                                     f"👤 Name: {name}\n"
                                     f"⚠️ Reason: {reason or 'N/A'}\n"
-                                    f"⚠️ ID: {bid or 'N/A'}\n"
-                                    f"🕒 Time: {now.strftime('%Y-%m-%d %I:%M:%S %p %Z')}"
+                                    f"🆔 ID: {bid or 'N/A'}\n"
+                                    f"🕒 Time: {now.strftime('%Y-%m-%d %I:%M:%S %p')}"
                                 ),
                             )
-                            print(f"[TELEGRAM] Alert sent")
+                            print("[Telegram] Alert sent")
                         except Exception as e:
-                            print("[Telegram] Alert sent failed", e)
-                        
-                        
-                        
+                            print("[Telegram] Alert send failed", e)
+
                         active_presence[key] = {
                             "id": bid,
                             "event_id": None,
@@ -322,26 +423,21 @@ async def start_recognition_loop():
                             "last_seen": now,
                             "embedding": emb,
                             "type": "bad",
+                            "restricted_alert_sent": restricted_sent,
                         }
                     else:
                         active_presence[key]["last_seen"] = now
-                        await manager.broadcast_json({
-                            "type": "alert_bad_update",
-                            "bad_id": bid,
-                            "name": name,
-                            "reason": reason,
-                            "last_seen": now.isoformat(),
-                        })
-                    processed_keys.add(key)
-                    # frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "bad", name, reason)
+                        processed_keys.add(key)
 
+                # ==========================================================
                 # KNOWN PERSON
+                # ==========================================================
                 elif uid is not None and dist <= THRESHOLD:
-                    # Get name and note from previously loaded maps
                     name = user_names.get(uid, f"User {uid[:4]}")
                     note = user_notes.get(uid, "")
-
                     key = f"known:{uid}"
+                    frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "known", name, note)
+
                     if key not in active_presence:
                         abs_path, web_path = save_bgr_image(frame_small)
                         ev = {
@@ -351,35 +447,37 @@ async def start_recognition_loop():
                             "snapshot_path": web_path,
                         }
                         res = await db.presence_events.insert_one(ev)
+
+                        # ✅ Restricted hours alert only once
+                        restricted_sent = False
+                        if await is_restricted_time():
+                            await send_restricted_alert("Known", name, uid, note, frame_small)
+                            restricted_sent = True
+
                         active_presence[key] = {
                             "id": uid,
                             "event_id": res.inserted_id,
                             "entry_time": now,
                             "last_seen": now,
                             "type": "known",
+                            "restricted_alert_sent": restricted_sent,
                         }
+
                         await manager.broadcast_json({
                             "type": "known",
                             "user_id": uid,
                             "name": name,
-                            "note": note,              # include note in broadcast
+                            "note": note,
                             "first_seen": now.isoformat(),
                             "snapshot": web_path,
                         })
                     else:
                         active_presence[key]["last_seen"] = now
-                        await manager.broadcast_json({
-                            "type": "known",
-                            "user_id": uid,
-                            "name": name,
-                            "note": note,              # include note in update
-                            "last_seen": now.isoformat(),
-                        })
-                    processed_keys.add(key)
-                    # Draw label using name + note from DB (note displayed as comment line)
-                    frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "known", name, note)
+                        processed_keys.add(key)
 
+                # ==========================================================
                 # UNKNOWN PERSON
+                # ==========================================================
                 else:
                     matched_unknown_key = None
                     matched_unknown_dist = float("inf")
@@ -396,11 +494,6 @@ async def start_recognition_loop():
 
                     if matched_unknown_key and matched_unknown_dist <= THRESHOLD:
                         active_presence[matched_unknown_key]["last_seen"] = now
-                        await manager.broadcast_json({
-                            "type": "unknown",
-                            "unknown_id": active_presence[matched_unknown_key]["id"],
-                            "last_seen": now.isoformat(),
-                        })
                         processed_keys.add(matched_unknown_key)
                     else:
                         frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "unknown")
@@ -415,6 +508,13 @@ async def start_recognition_loop():
                         res = await db.unknowns.insert_one(unknown_doc)
                         unknown_id = str(res.inserted_id)
                         key = f"unknown:{unknown_id}"
+
+                        # ✅ Restricted hours alert only once
+                        restricted_sent = False
+                        if await is_restricted_time():
+                            await send_restricted_alert("Unknown", "N/A", unknown_id, None, frame_small)
+                            restricted_sent = True
+
                         active_presence[key] = {
                             "id": unknown_id,
                             "event_id": None,
@@ -422,41 +522,31 @@ async def start_recognition_loop():
                             "last_seen": now,
                             "embedding": emb,
                             "type": "unknown",
+                            "restricted_alert_sent": restricted_sent,
                         }
+
                         await manager.broadcast_json({
                             "type": "unknown",
                             "unknown_id": unknown_id,
                             "image_path": web_path,
                             "first_seen": now.isoformat(),
                         })
-                        processed_keys.add(key)
-                        
-                        # ✅ Send Email Notification
-                        # try:
-                        #     send_alert_email(
-                        #         subject="🚨 ALERT: Unknown Person Detected",
-                        #         body=f"An unknown person was detected at {now}\nID: {unknown_id}",
-                        #         image_path=abs_path,
-                        #     )
-                        # except Exception as e:
-                        #     print(e)
-                            
-                    # frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "unknown")
 
-            # Cleanup
+            # ==========================================================
+            # CLEANUP INACTIVE PEOPLE
+            # ==========================================================
             to_remove = []
             for key, info in list(active_presence.items()):
                 if (now - info["last_seen"]).total_seconds() > ABSENCE_TIMEOUT:
                     exit_time = info["last_seen"]
                     duration = (exit_time - info["entry_time"]).total_seconds()
+
                     if info.get("event_id"):
                         await db.presence_events.update_one(
                             {"_id": info["event_id"]},
-                            {"$set": {
-                                "exit_time": exit_time,
-                                "duration_seconds": duration
-                            }}
+                            {"$set": {"exit_time": exit_time, "duration_seconds": duration}},
                         )
+
                     await manager.broadcast_json({
                         "type": "presence_end",
                         "id": info["id"],
@@ -464,10 +554,16 @@ async def start_recognition_loop():
                         "exit_time": exit_time.isoformat(),
                         "presence_type": info.get("type"),
                     })
-                    to_remove.append(key) 
+                    to_remove.append(key)
 
             for k in to_remove:
                 active_presence.pop(k, None)
+
+            # ==========================================================
+            # DRAW RESTRICTED BANNER IF ACTIVE
+            # ==========================================================
+            if await is_restricted_time():
+                frame_small = draw_restricted_hour_banner(frame_small)
 
             last_frame = frame_small
             await asyncio.sleep(0.05)

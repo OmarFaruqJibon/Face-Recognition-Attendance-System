@@ -46,6 +46,11 @@ class ApproveBody(BaseModel):
 class BadPersonBody(BaseModel):
     name: str
     reason: str = "" 
+    
+class RestrictedHoursBody(BaseModel):
+    enabled: bool
+    start_time: str  
+    end_time: str    # "HH:MM"
 
 
 @app.on_event("startup")
@@ -334,9 +339,33 @@ async def create_bad_person(
 
 
 
-# -------------------------- BAD PEOPLE SECTION -----------------
+# -------------------------- RESTRICTED HOURS -----------------
+@app.get("/restrictedhours")
+async def get_restricted_hours():
+    """Return restricted hours settings from DB."""
+    settings = await db.restricted_hours.find_one({"type": "restricted_hours"})
+    if not settings:
+        # default settings if not present
+        return {"enabled": False, "start_time": "22:00", "end_time": "06:00"}
+    
+    settings["_id"] = str(settings["_id"])
+    print(settings)
+    return settings
 
 
+@app.put("/restrictedhours")
+async def update_restricted_hours(data: RestrictedHoursBody):
+    """Update restricted hours settings in DB."""
+    await db.restricted_hours.update_one(
+        {"type": "restricted_hours"},
+        {"$set": {
+            "enabled": data.enabled,
+            "start_time": data.start_time,
+            "end_time": data.end_time
+        }},
+        upsert=True
+    )
+    return {"message": "Restricted hours updated successfully"}
 
 
 
