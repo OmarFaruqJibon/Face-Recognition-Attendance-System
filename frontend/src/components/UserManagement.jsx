@@ -1,8 +1,14 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Trash2, Edit2, PlusCircle } from "lucide-react";
-import { deleteUser, updateUser, createUser } from "../api/apiClient";
+import {
+  deleteUser,
+  updateUser,
+  createUser,
+  fetchUsers,
+} from "../api/apiClient";
 
-export default function UserManagement({ users = [], onUsersChanged }) {
+export default function UserManagement() {
+  const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -10,6 +16,20 @@ export default function UserManagement({ users = [], onUsersChanged }) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({ name: "", role: "", note: "" });
   const [imageFile, setImageFile] = useState(null);
+
+  // 🔹 Fetch users when component loads
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  async function loadUsers() {
+    try {
+      const data = await fetchUsers();
+      setUsers(data);
+    } catch (err) {
+      console.error("Failed to fetch users:", err);
+    }
+  }
 
   function openDeleteModal(user) {
     setSelectedUser(user);
@@ -44,8 +64,7 @@ export default function UserManagement({ users = [], onUsersChanged }) {
     setLoading(true);
     try {
       await deleteUser(selectedUser._id);
-      onUsersChanged &&
-        onUsersChanged(users.filter((u) => u._id !== selectedUser._id));
+      await loadUsers(); // refresh after delete
       closeModals();
     } catch (e) {
       alert("Delete failed: " + (e.response?.data?.detail || e.message));
@@ -65,10 +84,7 @@ export default function UserManagement({ users = [], onUsersChanged }) {
         note: formData.note.trim(),
       };
       await updateUser(selectedUser._id, body);
-      onUsersChanged &&
-        onUsersChanged(
-          users.map((u) => (u._id === selectedUser._id ? { ...u, ...body } : u))
-        );
+      await loadUsers(); // refresh after update
       closeModals();
     } catch (e) {
       alert("Update failed: " + (e.response?.data?.detail || e.message));
@@ -87,8 +103,8 @@ export default function UserManagement({ users = [], onUsersChanged }) {
       form.append("note", formData.note);
       if (imageFile) form.append("image", imageFile);
 
-      const newUser = await createUser(form);
-      onUsersChanged && onUsersChanged([newUser, ...users]);
+      await createUser(form);
+      await loadUsers(); // refresh after add
       closeModals();
     } catch (e) {
       alert("Add user failed: " + (e.response?.data?.detail || e.message));

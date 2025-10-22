@@ -492,10 +492,28 @@ async def start_recognition_loop():
                             matched_unknown_dist = d
                             matched_unknown_key = key
 
+                    # If we matched an existing unknown, update last_seen AND draw label
                     if matched_unknown_key and matched_unknown_dist <= THRESHOLD:
-                        active_presence[matched_unknown_key]["last_seen"] = now
+                        # draw label so it remains visible each frame
+                        frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "unknown")
+
+                        # update last_seen and optionally refine stored embedding (running average)
+                        info = active_presence[matched_unknown_key]
+                        info["last_seen"] = now
                         processed_keys.add(matched_unknown_key)
+
+                        # optional: update embedding with a small moving average to stabilize matching
+                        try:
+                            stored_emb = info.get("embedding")
+                            if stored_emb is not None:
+                                # blend: new_emb = 0.6 * stored + 0.4 * current
+                                blended = 0.6 * np.array(stored_emb, dtype=np.float32) + 0.4 * emb
+                                info["embedding"] = blended
+                        except Exception:
+                            pass
+
                     else:
+                        # new unknown: draw label, save snapshot, create DB doc and active_presence entry
                         frame_small = draw_ai_label(frame_small, x1, y1, x2, y2, "unknown")
                         abs_path, web_path = save_bgr_image(frame_small)
                         unknown_doc = {

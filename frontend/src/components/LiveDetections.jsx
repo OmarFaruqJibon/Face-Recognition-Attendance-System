@@ -1,14 +1,13 @@
 // src/components/LiveDetections.jsx
 import React from "react";
 import dayjs from "dayjs";
-import utc from 'dayjs/plugin/utc';
-import timezone from 'dayjs/plugin/timezone';
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
 export default function LiveDetections({ liveMap = {}, users = [] }) {
-
   // keep only known users, then sort by last_seen
   const items = Object.values(liveMap)
     .filter((it) => it.type === "known")
@@ -18,7 +17,7 @@ export default function LiveDetections({ liveMap = {}, users = [] }) {
 
   return (
     <section className="bg-white p-4 rounded shadow mb-4">
-      <h2 className="text-lg font-semibold mb-2">Live Camera</h2>
+      <h2 className="text-lg font-semibold mb-2">Live</h2>
       <div className="w-full mb-4">
         <img
           src={`${import.meta.env.VITE_API_BASE}/video_feed`}
@@ -36,7 +35,9 @@ export default function LiveDetections({ liveMap = {}, users = [] }) {
         )}
         {items.map((it) => {
           const name = userMap[it.id]?.name || `User ${it.id.slice(-4)}`;
-          const lastSeen = dayjs.utc(it.last_seen).format("YYYY-MM-DD HH:mm:ss");
+          const lastSeen = dayjs
+            .utc(it.last_seen)
+            .format("YYYY-MM-DD HH:mm:ss");
 
           const duration = Math.floor(
             (new Date(it.last_seen).getTime() -

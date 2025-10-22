@@ -1,16 +1,14 @@
-// frontend/src/components/BadPeopleManagement.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
+  getBadPeople,
   deleteBadPerson,
   updateBadPerson,
   addBadPerson,
 } from "../api/apiClient";
 import { Trash2, UserCircle2, Edit2, PlusCircle } from "lucide-react";
 
-export default function BadPeopleManagement({
-  badPeople = [],
-  onBadPeopleChanged,
-}) {
+export default function BadPeopleManagement() {
+  const [badPeople, setBadPeople] = useState([]);
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -26,6 +24,20 @@ export default function BadPeopleManagement({
     image: null,
   });
   const [loading, setLoading] = useState(false);
+
+  // 🔹 Fetch bad people on mount
+  useEffect(() => {
+    loadBadPeople();
+  }, []);
+
+  async function loadBadPeople() {
+    try {
+      const data = await getBadPeople();
+      setBadPeople(data);
+    } catch (err) {
+      console.error("Failed to load bad people:", err);
+    }
+  }
 
   function openEditModal(person) {
     setSelectedPerson(person);
@@ -43,10 +55,7 @@ export default function BadPeopleManagement({
     setLoading(true);
     try {
       await updateBadPerson(selectedPerson._id, editForm);
-      const updatedList = badPeople.map((p) =>
-        p._id === selectedPerson._id ? { ...p, ...editForm } : p
-      );
-      onBadPeopleChanged && onBadPeopleChanged(updatedList);
+      await loadBadPeople(); // reload list
       setShowEditModal(false);
     } catch (err) {
       alert("Update failed: " + (err.response?.data?.detail || err.message));
@@ -60,8 +69,7 @@ export default function BadPeopleManagement({
     setLoading(true);
     try {
       await deleteBadPerson(id);
-      onBadPeopleChanged &&
-        onBadPeopleChanged(badPeople.filter((p) => p._id !== id));
+      await loadBadPeople(); // reload list
     } catch (err) {
       alert("Delete failed: " + (err.response?.data?.detail || err.message));
     } finally {
@@ -79,10 +87,8 @@ export default function BadPeopleManagement({
       formData.append("reason", addForm.reason);
       if (addForm.image) formData.append("image", addForm.image);
 
-      const res = await addBadPerson(formData); // returns { success: true, data: {...} }
-      const newPerson = res.data;
-      // prepend new person so it's visible immediately
-      onBadPeopleChanged && onBadPeopleChanged([newPerson, ...badPeople]);
+      await addBadPerson(formData);
+      await loadBadPeople(); // reload list
       setAddForm({ name: "", role: "bad", reason: "", image: null });
       setShowAddModal(false);
     } catch (err) {
