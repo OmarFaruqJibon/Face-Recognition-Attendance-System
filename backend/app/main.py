@@ -192,6 +192,7 @@ async def ignore_unknown(unknown_id: str):
         raise HTTPException(status_code=404, detail="unknown not found")
     return {"status": "ok", "unknown_id": unknown_id}
 
+# GENERATE ATTANDENCE
 @app.post("/admin/generate_attendance/{date_str}")
 async def generate_attendance(date_str: str):
     """Always (re)generate attendance for the given date, then return results."""
@@ -205,15 +206,9 @@ async def generate_attendance(date_str: str):
     pipeline = [
         {"$match": {"date": target.isoformat()}},
         {
-            "$group": {
-                "_id": "$user_id",
-                "total_duration_seconds": {"$sum": "$total_duration_seconds"},
-            }
-        },
-        {
             "$lookup": {
                 "from": "users",
-                "localField": "_id",
+                "localField": "user_id",
                 "foreignField": "_id",
                 "as": "user",
             }
@@ -222,19 +217,18 @@ async def generate_attendance(date_str: str):
         {
             "$project": {
                 "_id": 0,
-                "user_id": {"$toString": "$_id"},
+                "user_id": {"$toString": "$user_id"},
                 "user_name": {"$ifNull": ["$user.name", "Unknown"]},
                 "total_duration_seconds": 1,
-                "date": target.isoformat(),
+                "first_seen": 1,
+                "last_seen": 1,
+                "date": 1,
             }
         },
     ]
 
     docs = await db.attendance_logs.aggregate(pipeline).to_list(None)
     return docs
-
-
-
 
 
 @app.post("/admin/reload_embeddings")
