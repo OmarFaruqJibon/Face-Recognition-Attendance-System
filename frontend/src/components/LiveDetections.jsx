@@ -26,8 +26,8 @@ export default function LiveDetections({ liveMap = {}, users = [] }) {
         />
       </div>
 
-      <h2 className="text-lg font-semibold mb-2">Detection Info</h2>
-      <div className="grid grid-cols-3 gap-4">
+      {/* <h2 className="text-lg font-semibold mb-2">Detection Info</h2> */}
+      {/* <div className="grid grid-cols-3 gap-4">
         {items.length === 0 && (
           <div className="col-span-3 text-gray-500">
             No one detected right now.
@@ -54,7 +54,7 @@ export default function LiveDetections({ liveMap = {}, users = [] }) {
             </div>
           );
         })}
-      </div>
+      </div> */}
     </section>
   );
 }

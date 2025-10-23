@@ -1,3 +1,4 @@
+// src/components/Sidebar.jsx
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
@@ -7,6 +8,7 @@ import {
   Clock,
   UserX,
   UserCheck,
+  CalendarCheck,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -28,12 +30,11 @@ export default function Sidebar() {
       icon: <UserCheck size={18} />,
       path: "/dashboard/presence",
     },
-    // {
-    //   name: "Unknown Alerts",
-    //   icon: <AlertTriangle size={18} />,
-    //   path: "/dashboard/unknowns",
-    // },
-
+      {
+    name: "Attendance",
+    icon: <CalendarCheck size={18} />,
+    path: "/dashboard/attendance",
+  },
     {
       name: "Bad People",
       icon: <UserX size={18} />,

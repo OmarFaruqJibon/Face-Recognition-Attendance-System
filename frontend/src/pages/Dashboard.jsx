@@ -7,6 +7,7 @@ import UserManagement from "../components/UserManagement";
 import BadPeopleManagement from "../components/BadPeopleManagement";
 import RestrictedHours from "../components/RestrictedHours";
 import Overview from "../components/Overview";
+import Attendance from "../components/Attendance";
 
 export default function Dashboard() {
   return (
@@ -22,6 +23,7 @@ export default function Dashboard() {
           <Route path="users" element={<UserManagement />} />
           <Route path="badpeople" element={<BadPeopleManagement />} />
           <Route path="restricted" element={<RestrictedHours />} />
+          <Route path="attendance" element={<Attendance />} />
           <Route
             path="*"
             element={<p className="text-gray-500">Page not found</p>}

@@ -18,6 +18,7 @@ from app.db import db
 from app.ws_manager import manager
 from app import recognition, scheduler
 from app.utils import serialize_doc
+from app.scheduler import generate_attendance_for_date
 
 load_dotenv()
 
@@ -193,10 +194,48 @@ async def ignore_unknown(unknown_id: str):
 
 @app.post("/admin/generate_attendance/{date_str}")
 async def generate_attendance(date_str: str):
+    """Always (re)generate attendance for the given date, then return results."""
     y, m, d = map(int, date_str.split("-"))
     target = datetime.date(y, m, d)
-    await scheduler.generate_attendance_for_date(target)
-    return {"status": "ok", "date": date_str}
+
+    # ✅ Always regenerate attendance before returning
+    await generate_attendance_for_date(target)
+
+    # ✅ Fetch fresh aggregated data with user info
+    pipeline = [
+        {"$match": {"date": target.isoformat()}},
+        {
+            "$group": {
+                "_id": "$user_id",
+                "total_duration_seconds": {"$sum": "$total_duration_seconds"},
+            }
+        },
+        {
+            "$lookup": {
+                "from": "users",
+                "localField": "_id",
+                "foreignField": "_id",
+                "as": "user",
+            }
+        },
+        {"$unwind": {"path": "$user", "preserveNullAndEmptyArrays": True}},
+        {
+            "$project": {
+                "_id": 0,
+                "user_id": {"$toString": "$_id"},
+                "user_name": {"$ifNull": ["$user.name", "Unknown"]},
+                "total_duration_seconds": 1,
+                "date": target.isoformat(),
+            }
+        },
+    ]
+
+    docs = await db.attendance_logs.aggregate(pipeline).to_list(None)
+    return docs
+
+
+
+
 
 @app.post("/admin/reload_embeddings")
 async def reload_embeddings():
