@@ -1,3 +1,5 @@
+# backend/app/scheduler.py
+
 import asyncio
 import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -6,12 +8,12 @@ from bson import ObjectId
 
 scheduler = AsyncIOScheduler()
 
-
 async def generate_attendance_for_date(target_date: datetime.date):
     """Aggregate presence_events for the given date into attendance_logs."""
     start = datetime.datetime.combine(target_date, datetime.time.min)
     end = start + datetime.timedelta(days=1)
 
+    # 🧩 Step 1: Normalize user_id type inside the pipeline
     pipeline = [
         {
             "$match": {
@@ -20,8 +22,19 @@ async def generate_attendance_for_date(target_date: datetime.date):
             }
         },
         {
+            "$addFields": {
+                "user_id_obj": {
+                    "$cond": {
+                        "if": {"$eq": [{"$type": "$user_id"}, "string"]},
+                        "then": {"$toObjectId": "$user_id"},
+                        "else": "$user_id"
+                    }
+                }
+            }
+        },
+        {
             "$group": {
-                "_id": "$user_id",
+                "_id": "$user_id_obj",
                 "total_duration": {"$sum": "$duration_seconds"},
                 "first_seen": {"$min": "$entry_time"},
                 "last_seen": {"$max": "$exit_time"},
@@ -29,18 +42,14 @@ async def generate_attendance_for_date(target_date: datetime.date):
         },
     ]
 
+    # 🧩 Step 2: Aggregate and upsert to attendance_logs
     cursor = db.presence_events.aggregate(pipeline)
     async for row in cursor:
-        user_id_value = row["_id"]
-
-        # ✅ Normalize user_id to ObjectId for consistency
-        if isinstance(user_id_value, ObjectId):
-            user_id_obj = user_id_value
-        else:
+        user_id_obj = row["_id"]
+        if not isinstance(user_id_obj, ObjectId):
             try:
-                user_id_obj = ObjectId(user_id_value)
+                user_id_obj = ObjectId(user_id_obj)
             except Exception:
-                # fallback for malformed IDs
                 continue
 
         doc = {
@@ -52,13 +61,12 @@ async def generate_attendance_for_date(target_date: datetime.date):
             "created_at": datetime.datetime.utcnow(),
         }
 
-        # ✅ Use upsert to prevent duplicates
+        # ✅ Use upsert to keep only one record per user/day
         await db.attendance_logs.update_one(
             {"date": target_date.isoformat(), "user_id": user_id_obj},
             {"$set": doc},
             upsert=True
         )
-
 
 def start_scheduler():
     """Start nightly attendance aggregation job."""

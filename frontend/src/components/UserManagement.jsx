@@ -117,7 +117,7 @@ export default function UserManagement() {
     <section className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-          User Management
+          Authorize Users
           <span className="ml-1 text-sm text-gray-500">({users.length})</span>
         </h3>
         <button
@@ -132,7 +132,7 @@ export default function UserManagement() {
       <div className="overflow-y-auto max-h-[420px] divide-y divide-gray-100">
         {users.length === 0 ? (
           <div className="text-gray-500 text-center py-8 text-sm">
-            No users found
+            No Authorize User found
           </div>
         ) : (
           users.map((u) => (

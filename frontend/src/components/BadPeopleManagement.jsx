@@ -102,7 +102,7 @@ export default function BadPeopleManagement() {
     <section className="bg-white p-4 rounded-2xl shadow mt-6 border border-gray-100">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-          Bad People
+          Suspicious Users
           <span className="ml-1 text-sm text-gray-500">
             ({badPeople.length})
           </span>
@@ -120,7 +120,7 @@ export default function BadPeopleManagement() {
       <div className="h-56 overflow-auto divide-y divide-gray-100">
         {badPeople.length === 0 ? (
           <div className="text-gray-500 text-sm text-center py-6">
-            No bad people found
+            No Suspicious User found
           </div>
         ) : (
           badPeople.map((p) => (

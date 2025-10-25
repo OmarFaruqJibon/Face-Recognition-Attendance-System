@@ -16,35 +16,36 @@ export default function Sidebar() {
 
   const menuItems = [
     {
-  name: "Overview",
-  icon: <LayoutDashboard size={18} />,
-  path: "/dashboard/overview",
-},
+      name: "Overview",
+      icon: <LayoutDashboard size={18} />,
+      path: "/dashboard/overview",
+    },
     {
-      name: "User Management",
+      name: "Authorize User",
       icon: <Users size={18} />,
       path: "/dashboard/users",
+    },
+    {
+      name: "Suspicious User",
+      icon: <UserX size={18} />,
+      path: "/dashboard/badpeople",
+    }, 
+    {
+      name: "Attendance",
+      icon: <CalendarCheck size={18} />,
+      path: "/dashboard/attendance",
     },
     {
       name: "Presence List",
       icon: <UserCheck size={18} />,
       path: "/dashboard/presence",
     },
-      {
-    name: "Attendance",
-    icon: <CalendarCheck size={18} />,
-    path: "/dashboard/attendance",
-  },
-    {
-      name: "Bad People",
-      icon: <UserX size={18} />,
-      path: "/dashboard/badpeople",
-    },
     {
       name: "Restricted Hours",
       icon: <Clock size={18} />,
       path: "/dashboard/restricted",
     },
+
   ];
 
   return (
@@ -57,11 +58,10 @@ export default function Sidebar() {
           <Link
             key={item.path}
             to={item.path}
-            className={`flex items-center gap-3 px-3 py-2 rounded-lg transition ${
-              location.pathname === item.path
-                ? "bg-blue-600 text-white"
-                : "hover:bg-gray-800"
-            }`}
+            className={`flex items-center gap-3 px-3 py-2 rounded-lg transition ${location.pathname === item.path
+              ? "bg-blue-600 text-white"
+              : "hover:bg-gray-800"
+              }`}
           >
             {item.icon}
             <span>{item.name}</span>

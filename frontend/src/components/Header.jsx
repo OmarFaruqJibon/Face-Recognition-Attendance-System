@@ -19,7 +19,7 @@ export default function Header() {
             <Link
               key={item.path}
               to={item.path}
-              className="text-sm font-medium text-blue-400 hover:text-blue-700"
+              className="text-sm font-medium bg-blue-700 text-white hover:bg-blue-400 px-2 py-2 rounded"
             >
               {item.label}
             </Link>
