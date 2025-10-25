@@ -70,14 +70,15 @@ function computeTopActiveUsers(presence, users) {
       const user = users.find((u) => u._id === id);
       return {
         name: user ? user.name || "Unnamed" : "Unknown",
-        durationMinutes: (totalSeconds / 60).toFixed(1), // convert to minutes
+        durationHours: (totalSeconds / 3600).toFixed(2), // convert to hours
       };
     })
-    .sort((a, b) => b.durationMinutes - a.durationMinutes)
+    .sort((a, b) => b.durationHours - a.durationHours)
     .slice(0, 5); // Top 5 by duration
 
   setTopActive(data);
 }
+
 
   // 🔹 Compute weekly attendance trend (distinct users per day)
   function computeWeeklyTrend(presence) {
@@ -165,22 +166,29 @@ function computeTopActiveUsers(presence, users) {
           <h2 className="text-lg font-semibold text-gray-700 mb-4">
             Top Active Users (This Week)
           </h2>
-          <ResponsiveContainer width="100%" height={250}>
+<ResponsiveContainer width="100%" height={250}>
   <BarChart
     data={topActive}
     layout="vertical"
     margin={{ top: 10, right: 20, left: 40, bottom: 10 }}
   >
     <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-    <XAxis type="number" label={{ value: "Minutes", position: "insideBottom", offset: -5 }} />
-    <YAxis type="category" dataKey="name" />
-    <Tooltip
-      formatter={(val) => [`${val} min`, "Total Duration"]}
+    <XAxis
+      type="number"
+      label={{ value: "Hours", position: "insideBottom", offset: -5 }}
     />
+    <YAxis type="category" dataKey="name" />
+    <Tooltip formatter={(val) => [`${val} hrs`, "Total Duration"]} />
     <Legend />
-    <Bar dataKey="durationMinutes" fill="#10B981" barSize={20} name="Total Duration (min)" />
+    <Bar
+      dataKey="durationHours"
+      fill="#10B981"
+      barSize={20}
+      name="Total Duration (hrs)"
+    />
   </BarChart>
 </ResponsiveContainer>
+
         </div>
       </div>
     </div>

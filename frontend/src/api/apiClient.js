@@ -25,7 +25,7 @@ export async function fetchUnknowns(limit = 50) {
   }));
 }
 
-export async function fetchPresence(limit = 100) {
+export async function fetchPresence(limit = 10000000) {
   const res = await client.get("/presence_events", { params: { limit } });
   return res.data;
 }
